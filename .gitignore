@@ -1,0 +1,43 @@
+# Excel/CSV files (user data)
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.ods
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OMC/Claude Code
+.omc/
+.claude/
+.claude/settings.local.json
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# OS
+Thumbs.db
+.DS_Store
