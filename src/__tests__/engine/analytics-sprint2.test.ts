@@ -143,16 +143,16 @@ describe('calculateMaxDrawdown', () => {
   it('handles single trade loss', () => {
     const trades = makeTradesFromPnLs([-500])
     const result = calculateMaxDrawdown(trades)
-    // Only one point, peak = trough, no drawdown calculable (peak=0 guard)
-    expect(typeof result.value).toBe('number')
-    expect(isNaN(result.value)).toBe(false)
+    // Curve never goes positive: peak stays at 0, no drawdown computed
+    expect(result.value).toBe(0)
   })
 
   it('finds worst drawdown among multiple drawdowns', () => {
     // Cumulative: 100, 50 (dd=-50%), 150, 100 (dd=-33%), 200
+    // Worst drawdown: 100→50 = -50%
     const trades = makeTradesFromPnLs([100, -50, 100, -50, 100])
     const result = calculateMaxDrawdown(trades)
-    expect(result.value).toBeLessThan(0)
+    expect(result.value).toBeCloseTo(-50, 0)
   })
 
   it('returns dates when drawdown occurs', () => {
@@ -331,7 +331,7 @@ describe('calculateMonthlyBreakdown', () => {
     expect(result).toHaveLength(1)
     expect(result[0].month).toBe('2025-01')
     expect(result[0].trades).toBe(10)
-    // gross: 5 sells * 110 - 5 buys * 100 = 550 - 500 = 50
+    // gross: sum of realizedPnL for symbols closed this month = 5 * 10 = 50
     expect(result[0].grossPnL).toBeCloseTo(50)
     // all charges allocated to single month (total = 50, dpCharges = 0)
     expect(result[0].charges).toBeCloseTo(50)
@@ -447,17 +447,57 @@ describe('Integration: computeAnalytics with all Sprint 2 metrics', () => {
     expect(Array.isArray(result.monthlyBreakdown)).toBe(true)
   })
 
-  it('monthly P&L gross sum roughly matches sum of individual trade cash flows', () => {
-    const pnls = [100, 200, -50, 300]
-    const trades = makeTradesFromPnLs(pnls, '2025-03-10')
-    const snapshot = makeMinimalSnapshot(trades)
+  it('monthly P&L gross sum matches total closed realized P&L', () => {
+    // With close-month attribution, sum of all months' grossPnL equals the
+    // sum of realizedPnL across all closed SymbolPnL entries.
+    // Use explicitly named symbols so trades and symbolPnL entries match.
+    const symbols = ['SYM0', 'SYM1', 'SYM2', 'SYM3']
+    const pnls    = [100, 200, -50, 300]
+    const baseDate = new Date('2025-03-10')
+    const trades: RawTrade[] = []
+    for (let i = 0; i < pnls.length; i++) {
+      const d = new Date(baseDate)
+      d.setDate(baseDate.getDate() + i)
+      const date = d.toISOString().split('T')[0]
+      const qty = 10
+      const buyPrice = 100
+      const sellPrice = buyPrice + pnls[i] / qty
+      trades.push(makeTrade({ tradeDate: date, tradeType: 'buy',  price: buyPrice,  quantity: qty, symbol: symbols[i] }))
+      trades.push(makeTrade({ tradeDate: date, tradeType: 'sell', price: sellPrice, quantity: qty, symbol: symbols[i] }))
+    }
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(symbols[i], p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
 
     const result = computeAnalytics(snapshot)
 
     const totalMonthlyGross = result.monthlyBreakdown.reduce((s, m) => s + m.grossPnL, 0)
-    // gross cash flow across all trades = sum of pnls (sell - buy per day)
-    const expectedGross = pnls.reduce((s, v) => s + v, 0)
+    // Expected: sum of realizedPnL for all closed positions
+    const expectedGross = symbolPnL
+      .filter((s) => s.openQuantity === 0)
+      .reduce((s, x) => s + x.realizedPnL, 0)
     expect(totalMonthlyGross).toBeCloseTo(expectedGross, 0)
+  })
+
+  it('positions opened month 1, closed month 2 — P&L attributed to close month', () => {
+    // Buy in January, sell in February — cross-month position.
+    // Manually construct trades (makeTradesFromPnLs cannot span months).
+    const trades: RawTrade[] = [
+      makeTrade({ tradeDate: '2025-01-15', tradeType: 'buy',  price: 100, quantity: 10, symbol: 'CROSS' }),
+      makeTrade({ tradeDate: '2025-02-10', tradeType: 'sell', price: 110, quantity: 10, symbol: 'CROSS' }),
+    ]
+    // realizedPnL = (110 - 100) * 10 = 100
+    const symbolPnL = [makeSymbolPnL('CROSS', 100)]
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
+
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+
+    expect(result).toHaveLength(2)
+    const jan = result.find((m) => m.month === '2025-01')!
+    const feb = result.find((m) => m.month === '2025-02')!
+    // Position opened in Jan but not closed → Jan grossPnL = 0
+    expect(jan.grossPnL).toBeCloseTo(0)
+    // Position closed in Feb → Feb grossPnL = realized P&L = 100
+    expect(feb.grossPnL).toBeCloseTo(100)
   })
 
   it('handles empty trades gracefully — all sprint2 fields return safe defaults', () => {

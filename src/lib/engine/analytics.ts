@@ -92,18 +92,23 @@ export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
     cumulative.push({ date, value: running })
   }
 
-  let peak = cumulative[0].value
-  let peakDate = cumulative[0].date
+  // Start high-water mark at 0 (implicit equity baseline before any trades).
+  // This ensures a curve that never goes positive returns value = 0.
+  let peak = 0
+  let peakDate = ''
   let maxDrawdown = 0
-  let drawdownPeakDate = cumulative[0].date
-  let drawdownTroughDate = cumulative[0].date
+  let drawdownPeakDate = ''
+  let drawdownTroughDate = ''
 
   for (const point of cumulative) {
     if (point.value > peak) {
       peak = point.value
       peakDate = point.date
     }
-    if (peak !== 0) {
+    // Only compute drawdown when the high-water mark is positive.
+    // When peak === 0 the curve has never been in profit, so there is
+    // no meaningful peak-to-trough percentage to report.
+    if (peak > 0) {
       const drawdown = (point.value - peak) / Math.abs(peak) * 100
       if (drawdown < maxDrawdown) {
         maxDrawdown = drawdown
@@ -303,7 +308,17 @@ export function calculateMonthlyBreakdown(
   const totalTrades = trades.length
   const totalChargesAlloc = pnlSummary.charges.total - pnlSummary.charges.dpCharges
 
-  // Build a map: symbol → first trade month (to allocate win/loss per month)
+  // Two maps serve two different purposes:
+  //
+  // symbolFirstMonth (min/open-month): maps each symbol to the month its
+  //   FIRST trade occurred. Used for win rate — answers "of positions I
+  //   entered this month, what fraction ended up profitable?"
+  //
+  // symbolCloseMonth (max/close-month): maps each symbol to the month its
+  //   LAST trade occurred (i.e., position close). Used for gross P&L
+  //   attribution — realized P&L is credited to the month it was realized.
+
+  // Build a map: symbol → first trade month (for win rate attribution)
   const symbolFirstMonth = new Map<string, string>()
   for (const t of trades) {
     const month = t.tradeDate.slice(0, 7)
@@ -313,7 +328,17 @@ export function calculateMonthlyBreakdown(
     }
   }
 
-  // Group closed symbol P&L by their first-trade month
+  // Build a map: symbol → last trade month (for P&L attribution to close month)
+  const symbolCloseMonth = new Map<string, string>()
+  for (const t of trades) {
+    const month = t.tradeDate.slice(0, 7)
+    const existing = symbolCloseMonth.get(t.symbol)
+    if (!existing || month > existing) {
+      symbolCloseMonth.set(t.symbol, month)
+    }
+  }
+
+  // Group closed symbol P&L by their first-trade month (for win rate)
   const monthSymbolPnL = new Map<string, SymbolPnL[]>()
   for (const s of symbolPnL) {
     if (s.openQuantity !== 0) continue // skip open positions
@@ -327,19 +352,30 @@ export function calculateMonthlyBreakdown(
     }
   }
 
+  // Group closed symbol P&L by their close-trade month (for gross P&L)
+  const monthClosedPnL = new Map<string, SymbolPnL[]>()
+  for (const s of symbolPnL) {
+    if (s.openQuantity !== 0) continue // skip open positions
+    const month = symbolCloseMonth.get(s.symbol)
+    if (!month) continue
+    const bucket = monthClosedPnL.get(month)
+    if (bucket) {
+      bucket.push(s)
+    } else {
+      monthClosedPnL.set(month, [s])
+    }
+  }
+
   const sortedMonths = Array.from(monthTradeMap.keys()).sort()
 
   return sortedMonths.map((month) => {
     const monthTrades = monthTradeMap.get(month)!
     const tradeCount = monthTrades.length
 
-    // Gross P&L: sell inflows - buy outflows
-    let grossPnL = 0
-    for (const t of monthTrades) {
-      grossPnL += t.tradeType === 'sell'
-        ? t.price * t.quantity
-        : -(t.price * t.quantity)
-    }
+    // Gross P&L: sum of realizedPnL for positions whose close month is this month.
+    // Months where trades occur but no positions close will show grossPnL = 0.
+    const closedSymbols = monthClosedPnL.get(month) ?? []
+    const grossPnL = closedSymbols.reduce((sum, s) => sum + s.realizedPnL, 0)
 
     // Proportional charge allocation
     const charges = totalTrades > 0
@@ -348,7 +384,7 @@ export function calculateMonthlyBreakdown(
 
     const netPnL = grossPnL - charges
 
-    // Win rate from closed symbol P&L in this month
+    // Win rate from closed symbol P&L attributed to open month
     const symbols = monthSymbolPnL.get(month) ?? []
     const winners = symbols.filter((s) => s.realizedPnL > 0).length
     const total = symbols.length
