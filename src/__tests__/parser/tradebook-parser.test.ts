@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as XLSX from 'xlsx'
 import { parseTradebook } from '@/lib/parser/tradebook-parser'
+import { loadXLSX } from '@/lib/parser/excel-utils'
 import type { ParseTradebookResult } from '@/lib/types'
 
 // ─── Load fixture ─────────────────────────────────────────────────────────────
@@ -11,7 +12,9 @@ const FIXTURE_PATH = path.resolve(__dirname, '../fixtures/tradebook-UK4551-EQ.xl
 
 let result: ParseTradebookResult
 
-beforeAll(() => {
+beforeAll(async () => {
+  // Populate the XLSX cache so getSheetRows / coerceCell date branch work
+  await loadXLSX()
   const buffer = fs.readFileSync(FIXTURE_PATH)
   const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
   result = parseTradebook({ workbook })

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { DualFileUploader } from '@/components/import/FileUploader'
 import { ImportPreview } from '@/components/import/ImportPreview'
 import { ImportValidation } from '@/components/import/ImportValidation'
-import { parseFiles } from '@/lib/parser/parse-files'
+import { useParseWorker } from '@/lib/parser/use-parse-worker'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import type { ParseTradebookResult, ParsePnLResult, ParseWarning, ParseError } from '@/lib/types'
 
@@ -12,6 +12,7 @@ type ImportState = 'idle' | 'parsing' | 'previewing' | 'importing' | 'complete'
 export default function ImportPage() {
   const navigate = useNavigate()
   const { importData } = usePortfolioStore()
+  const { startParse } = useParseWorker()
 
   const [state, setState] = useState<ImportState>('idle')
   const [progressText, setProgressText] = useState('')
@@ -48,10 +49,23 @@ export default function ImportPage() {
     if (!tradebookFile || !pnlFile) return
 
     setState('parsing')
-    setProgressText('Parsing tradebook...')
+    setProgressText('Parsing files...')
+
+    const t0 = performance.now()
 
     try {
-      const { tradebook, pnl } = await parseFiles(tradebookFile, pnlFile)
+      const parseResult = await startParse(tradebookFile, pnlFile)
+
+      const elapsed = Math.round(performance.now() - t0)
+      console.log(`Parse complete: ${elapsed}ms`)
+
+      if (!parseResult) {
+        setAllErrors([{ code: 'PARSE_FAILED', message: 'Parsing returned no result' }])
+        setState('previewing')
+        return
+      }
+
+      const { tradebook, pnl } = parseResult
 
       setProgressText(`${tradebook.trades.length} trades found`)
 
@@ -62,11 +76,13 @@ export default function ImportPage() {
 
       setState('previewing')
     } catch (err) {
+      const elapsed = Math.round(performance.now() - t0)
+      console.log(`Parse failed: ${elapsed}ms`)
       const message = err instanceof Error ? err.message : 'Unexpected error during parsing'
       setAllErrors([{ code: 'PARSE_FAILED', message }])
       setState('previewing')
     }
-  }, [tradebookFile, pnlFile])
+  }, [tradebookFile, pnlFile, startParse])
 
   const handleConfirm = useCallback(async () => {
     if (!tradebookResult || !pnlResult) return

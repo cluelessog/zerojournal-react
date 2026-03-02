@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+import type * as XLSXType from 'xlsx'
 import type {
   ParsePnLResult,
   SymbolPnL,
@@ -8,7 +8,7 @@ import type {
   ParseWarning,
   ParseError,
 } from '@/lib/types'
-import { findHeaderRow, coerceCell, extractLabeledValue, getSheetRows, stripChargeSuffix } from './excel-utils'
+import { loadXLSX, findHeaderRow, coerceCell, extractLabeledValue, getSheetRows, stripChargeSuffix } from './excel-utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,8 +42,11 @@ const CHARGE_LABEL_MAP: Record<string, keyof ChargesBreakdown> = {
  *   Phase 2: Extract per-charge-line breakdown from the charges section
  *   Phase 3: Extract per-symbol P&L rows (header ~row 38)
  *   Bonus:   Extract DP charges from "Other Debits and Credits" sheet
+ *
+ * Note: XLSX must be loaded via loadXLSX() before calling this function
+ * (getSheetRows and coerceCell date branch require the cached XLSX module).
  */
-export function parsePnL(input: { workbook: XLSX.WorkBook }): ParsePnLResult {
+export function parsePnL(input: { workbook: XLSXType.WorkBook }): ParsePnLResult {
   const { workbook } = input
   const warnings: ParseWarning[] = []
   const errors: ParseError[] = []
@@ -250,7 +253,7 @@ function parseSymbolPnL(rows: unknown[][], warnings: ParseWarning[]): SymbolPnL[
 
 // ─── parseDPCharges ───────────────────────────────────────────────────────────
 
-function parseDPCharges(workbook: XLSX.WorkBook, warnings: ParseWarning[]): DPCharge[] {
+function parseDPCharges(workbook: XLSXType.WorkBook, warnings: ParseWarning[]): DPCharge[] {
   // Find the "Other Debits and Credits" sheet (may have slightly different name)
   const dpSheetName = workbook.SheetNames.find(
     n => n.toLowerCase().includes('other debit') || n.toLowerCase().includes('other credit'),
@@ -340,9 +343,11 @@ function makeEmptyResult(warnings: ParseWarning[], errors: ParseError[]): ParseP
 // ─── parsePnLFile ─────────────────────────────────────────────────────────────
 
 /**
- * Parse a PnL File object (entry point for main-thread parsing).
+ * Parse a PnL File object (entry point for worker-thread parsing).
+ * Loads SheetJS dynamically so it stays out of the main bundle.
  */
 export async function parsePnLFile(file: File): Promise<ParsePnLResult> {
+  const XLSX = await loadXLSX()
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
   const result = parsePnL({ workbook })

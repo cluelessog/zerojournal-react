@@ -79,6 +79,30 @@ export interface OrderGroup {
   mfe: number   // Maximum Favorable Excursion
 }
 
+export interface DrawdownMetric {
+  value: number // percentage (negative for drawdown, positive for drawup)
+  peakDate: string
+  troughDate: string
+}
+
+export interface StreakMetric {
+  longestWinStreak: number
+  longestLossStreak: number
+  currentStreak: {
+    type: 'win' | 'loss'
+    count: number
+  }
+}
+
+export interface MonthlyMetric {
+  month: string     // YYYY-MM format
+  trades: number
+  grossPnL: number
+  charges: number
+  netPnL: number
+  winRate: number   // 0-100
+}
+
 export interface TradeAnalytics {
   totalTrades: number
   totalSymbols: number
@@ -99,6 +123,11 @@ export interface TradeAnalytics {
   worstTrade: { symbol: string; pnl: number } | null
   longestHolding: OrderGroup | null
   mostTradedSymbol: string | null
+  sharpeRatio: number
+  maxDrawdown: DrawdownMetric
+  minDrawup: DrawdownMetric
+  streaks: StreakMetric
+  monthlyBreakdown: MonthlyMetric[]
 }
 
 export interface CrossReferenceData {
@@ -176,6 +205,18 @@ export interface CrossRefResult {
   unmatched: string[]
   warnings: ParseWarning[]
 }
+
+// ─── Worker Types ────────────────────────────────────────────────────────────
+
+export type WorkerRequest = {
+  type: 'parse'
+  tradebookFile: File
+  pnlFile: File
+}
+
+export type WorkerResponse =
+  | { type: 'complete'; result: { tradebook: ParseTradebookResult; pnl: ParsePnLResult } }
+  | { type: 'error'; error: string }
 
 // ─── UI Types ─────────────────────────────────────────────────────────────────
 

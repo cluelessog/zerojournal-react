@@ -1,4 +1,20 @@
-import * as XLSX from 'xlsx'
+import type * as XLSXType from 'xlsx'
+
+// ─── Lazy XLSX loader ─────────────────────────────────────────────────────────
+
+// Holds the resolved XLSX module after the first loadXLSX() call.
+let _xlsxCache: typeof XLSXType | null = null
+
+/**
+ * Dynamically import SheetJS and cache it for subsequent calls.
+ * Must be awaited before any XLSX operation (openWorkbook, getSheetRows, coerceCell date branch).
+ */
+export async function loadXLSX(): Promise<typeof XLSXType> {
+  if (!_xlsxCache) {
+    _xlsxCache = await import('xlsx')
+  }
+  return _xlsxCache
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +66,8 @@ export function findHeaderRow(
  * Excel date serials: integers representing days since 1899-12-30.
  * SheetJS returns dates as JS Date objects when cellDates:true, but we use
  * header:1 without cellDates so serials come through as numbers.
+ *
+ * For the date branch, XLSX must already be loaded via loadXLSX() before calling.
  */
 export function coerceCell(value: unknown, targetType: CellTargetType): unknown {
   if (value === null || value === undefined || value === '') {
@@ -83,6 +101,10 @@ export function coerceCell(value: unknown, targetType: CellTargetType): unknown 
       }
       // Excel serial number -> ISO date string
       if (typeof value === 'number' && value > 0) {
+        // _xlsxCache is guaranteed to be set before parsers call coerceCell,
+        // because parseTradeBookFile / parsePnLFile call loadXLSX() first.
+        const XLSX = _xlsxCache
+        if (!XLSX) return ''
         const date = XLSX.SSF.parse_date_code(value)
         if (!date) return ''
         const y = date.y
@@ -137,8 +159,10 @@ export function extractLabeledValue(
 
 /**
  * Read an ArrayBuffer into a SheetJS workbook.
+ * Loads XLSX dynamically on first call.
  */
-export function openWorkbook(data: ArrayBuffer): XLSX.WorkBook {
+export async function openWorkbook(data: ArrayBuffer): Promise<XLSXType.WorkBook> {
+  const XLSX = await loadXLSX()
   return XLSX.read(new Uint8Array(data), { type: 'array' })
 }
 
@@ -147,8 +171,12 @@ export function openWorkbook(data: ArrayBuffer): XLSX.WorkBook {
 /**
  * Get all rows from a named sheet as an array-of-arrays.
  * Returns empty array if sheet not found.
+ * Requires loadXLSX() to have been called first.
  */
-export function getSheetRows(wb: XLSX.WorkBook, sheetName: string): unknown[][] {
+export function getSheetRows(wb: XLSXType.WorkBook, sheetName: string): unknown[][] {
+  // _xlsxCache is guaranteed set before this is called (openWorkbook or loadXLSX awaited first)
+  const XLSX = _xlsxCache
+  if (!XLSX) return []
   const ws = wb.Sheets[sheetName]
   if (!ws) return []
   return XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null })

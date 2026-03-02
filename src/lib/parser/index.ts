@@ -6,3 +6,4 @@ export * from './validation'
 // parse-files re-exports parseTradeBookFile / parsePnLFile already defined above;
 // export only the combined parseFiles function to avoid ambiguity.
 export { parseFiles } from './parse-files'
+export { useParseWorker } from './use-parse-worker'

@@ -1,6 +1,6 @@
-import * as XLSX from 'xlsx'
+import type * as XLSXType from 'xlsx'
 import type { RawTrade, ParseTradebookResult, ParseWarning, ParseError } from '@/lib/types'
-import { findHeaderRow, coerceCell, getSheetRows } from './excel-utils'
+import { loadXLSX, findHeaderRow, coerceCell, getSheetRows } from './excel-utils'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -30,8 +30,11 @@ const TRADEBOOK_HEADERS = [
  * 2. Scan first 30 rows for the header row using findHeaderRow().
  * 3. For each data row after the header, map cells to RawTrade by column name.
  * 4. Coerce types, collect warnings for bad rows, skip fully empty rows.
+ *
+ * Note: XLSX must be loaded via loadXLSX() before calling this function
+ * (the coerceCell date branch requires the cached XLSX module).
  */
-export function parseTradebook(input: { workbook: XLSX.WorkBook }): ParseTradebookResult {
+export function parseTradebook(input: { workbook: XLSXType.WorkBook }): ParseTradebookResult {
   const { workbook } = input
   const warnings: ParseWarning[] = []
   const errors: ParseError[] = []
@@ -146,9 +149,11 @@ export function parseTradebook(input: { workbook: XLSX.WorkBook }): ParseTradebo
 // ─── parseTradeBookFile ───────────────────────────────────────────────────────
 
 /**
- * Parse a tradebook File object (entry point for main-thread parsing).
+ * Parse a tradebook File object (entry point for worker-thread parsing).
+ * Loads SheetJS dynamically so it stays out of the main bundle.
  */
 export async function parseTradeBookFile(file: File): Promise<ParseTradebookResult> {
+  const XLSX = await loadXLSX()
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
   const result = parseTradebook({ workbook })

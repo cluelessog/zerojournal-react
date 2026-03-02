@@ -1,4 +1,371 @@
-import type { PortfolioSnapshot, TradeAnalytics } from '@/lib/types'
+import type { PortfolioSnapshot, RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL } from '@/lib/types'
+
+// ─── US-008: Sharpe Ratio ─────────────────────────────────────────────────────
+
+/**
+ * Calculate the annualised Sharpe Ratio from a list of raw trades.
+ *
+ * P&L per trade is approximated as: for sell trades, price * quantity (inflow);
+ * for buy trades, -(price * quantity) (outflow). We group by tradeDate and sum
+ * to get daily P&L, then compute mean and std dev of those daily returns.
+ *
+ * Formula: (mean_daily_return - daily_risk_free_rate) / std_dev_daily_return
+ * Daily risk-free rate: annualRate / 252
+ *
+ * Edge cases:
+ * - Fewer than 2 trades → return 0
+ * - Std dev of daily returns is 0 → return 0
+ */
+/**
+ * Calculates the annualized Sharpe Ratio.
+ * Formula: ((mean_daily_return - daily_risk_free_rate) / std_dev) * sqrt(252)
+ * @param trades Raw trades to calculate from
+ * @param riskFreeRate Annual risk-free rate (default: 2%)
+ * @returns Annualized Sharpe Ratio
+ */
+export function calculateSharpeRatio(
+  trades: RawTrade[],
+  riskFreeRate: number = 0.02,
+): number {
+  if (trades.length < 2) return 0
+
+  // Build daily P&L map: date → net cash flow (sells positive, buys negative)
+  const dailyPnL = new Map<string, number>()
+  for (const t of trades) {
+    const value = t.tradeType === 'sell'
+      ? t.price * t.quantity
+      : -(t.price * t.quantity)
+    dailyPnL.set(t.tradeDate, (dailyPnL.get(t.tradeDate) ?? 0) + value)
+  }
+
+  const returns = Array.from(dailyPnL.values())
+  if (returns.length < 2) return 0
+
+  const n = returns.length
+  const mean = returns.reduce((s, v) => s + v, 0) / n
+
+  const variance = returns.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1)
+  const stdDev = Math.sqrt(variance)
+
+  if (stdDev === 0) return 0
+
+  const dailyRfr = riskFreeRate / 252
+  const annualizationFactor = Math.sqrt(252)
+  return ((mean - dailyRfr) / stdDev) * annualizationFactor
+}
+
+// ─── US-009: Max Drawdown & Min Drawup ────────────────────────────────────────
+
+/**
+ * Calculate the Maximum Drawdown from a list of raw trades.
+ *
+ * Algorithm:
+ * 1. Compute daily net P&L (sell inflows minus buy outflows) ordered by date.
+ * 2. Build cumulative P&L series.
+ * 3. Walk the series tracking the running peak and its date.
+ * 4. At each point compute (current - peak) / |peak| * 100.
+ * 5. Return the most negative value (worst decline) as a percentage.
+ *
+ * Returns value = 0 and empty dates when there are no drawdowns.
+ */
+export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
+  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '' }
+  if (trades.length === 0) return empty
+
+  // Build sorted daily P&L
+  const dailyMap = new Map<string, number>()
+  for (const t of trades) {
+    const value = t.tradeType === 'sell'
+      ? t.price * t.quantity
+      : -(t.price * t.quantity)
+    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + value)
+  }
+
+  const sortedDates = Array.from(dailyMap.keys()).sort()
+  if (sortedDates.length === 0) return empty
+
+  // Build cumulative series
+  const cumulative: Array<{ date: string; value: number }> = []
+  let running = 0
+  for (const date of sortedDates) {
+    running += dailyMap.get(date)!
+    cumulative.push({ date, value: running })
+  }
+
+  let peak = cumulative[0].value
+  let peakDate = cumulative[0].date
+  let maxDrawdown = 0
+  let drawdownPeakDate = cumulative[0].date
+  let drawdownTroughDate = cumulative[0].date
+
+  for (const point of cumulative) {
+    if (point.value > peak) {
+      peak = point.value
+      peakDate = point.date
+    }
+    if (peak !== 0) {
+      const drawdown = (point.value - peak) / Math.abs(peak) * 100
+      if (drawdown < maxDrawdown) {
+        maxDrawdown = drawdown
+        drawdownPeakDate = peakDate
+        drawdownTroughDate = point.date
+      }
+    }
+  }
+
+  return {
+    value: maxDrawdown,
+    peakDate: drawdownPeakDate,
+    troughDate: drawdownTroughDate,
+  }
+}
+
+/**
+ * Calculate the Minimum Drawup from a list of raw trades.
+ *
+ * Min drawup = the smallest recovery from a trough (closest to zero after a loss).
+ * This identifies the most difficult / weakest recovery in the equity curve.
+ *
+ * Algorithm:
+ * 1. Same cumulative P&L series as drawdown.
+ * 2. Track running trough and its date.
+ * 3. At each point compute (current - trough) / |trough| * 100.
+ * 4. Track the minimum positive drawup value (weakest recovery).
+ */
+export function calculateMinDrawup(trades: RawTrade[]): DrawdownMetric {
+  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '' }
+  if (trades.length === 0) return empty
+
+  const dailyMap = new Map<string, number>()
+  for (const t of trades) {
+    const value = t.tradeType === 'sell'
+      ? t.price * t.quantity
+      : -(t.price * t.quantity)
+    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + value)
+  }
+
+  const sortedDates = Array.from(dailyMap.keys()).sort()
+  if (sortedDates.length === 0) return empty
+
+  const cumulative: Array<{ date: string; value: number }> = []
+  let running = 0
+  for (const date of sortedDates) {
+    running += dailyMap.get(date)!
+    cumulative.push({ date, value: running })
+  }
+
+  let trough = cumulative[0].value
+  let troughDate = cumulative[0].date
+  let minDrawup: number | null = null
+  let drawupTroughDate = cumulative[0].date
+  let drawupPeakDate = cumulative[0].date
+
+  for (const point of cumulative) {
+    if (point.value < trough) {
+      trough = point.value
+      troughDate = point.date
+    }
+    // Only compute drawup when we are above the trough (actual recovery)
+    if (trough < 0 && point.value > trough) {
+      const drawup = (point.value - trough) / Math.abs(trough) * 100
+      if (minDrawup === null || drawup < minDrawup) {
+        minDrawup = drawup
+        drawupTroughDate = troughDate
+        drawupPeakDate = point.date
+      }
+    }
+  }
+
+  return {
+    value: minDrawup ?? 0,
+    peakDate: drawupPeakDate,
+    troughDate: drawupTroughDate,
+  }
+}
+
+// ─── US-010: Win/Loss Streaks ─────────────────────────────────────────────────
+
+/**
+ * Calculate win/loss streak metrics from a list of raw trades.
+ *
+ * Each trade's P&L is computed as:
+ *   sell: price * quantity (inflow)
+ *   buy:  -(price * quantity) (outflow)
+ * Trades are sorted by orderExecutionTime then tradeDate.
+ * Win = P&L > 0, Loss = P&L <= 0.
+ *
+ * Tracks:
+ * - longestWinStreak: maximum consecutive wins
+ * - longestLossStreak: maximum consecutive losses
+ * - currentStreak: type and count from the most recent trade backward
+ */
+export function calculateStreaks(trades: RawTrade[]): StreakMetric {
+  const empty: StreakMetric = {
+    longestWinStreak: 0,
+    longestLossStreak: 0,
+    currentStreak: { type: 'win', count: 0 },
+  }
+  if (trades.length === 0) return empty
+
+  // Group trades by date: net P&L per day (sells positive, buys negative)
+  const dailyMap = new Map<string, number>()
+  for (const t of trades) {
+    const pnl = t.tradeType === 'sell'
+      ? t.price * t.quantity
+      : -(t.price * t.quantity)
+    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + pnl)
+  }
+
+  // Sort dates and classify each day as win or loss
+  const sortedDates = Array.from(dailyMap.keys()).sort()
+  const results: Array<'win' | 'loss'> = sortedDates.map((date) =>
+    (dailyMap.get(date)! > 0 ? 'win' : 'loss')
+  )
+
+  let longestWin = 0
+  let longestLoss = 0
+  let streak = 1
+  let streakType = results[0]
+
+  for (let i = 1; i < results.length; i++) {
+    if (results[i] === streakType) {
+      streak++
+    } else {
+      if (streakType === 'win') longestWin = Math.max(longestWin, streak)
+      else longestLoss = Math.max(longestLoss, streak)
+      streakType = results[i]
+      streak = 1
+    }
+  }
+  // Flush final streak
+  if (streakType === 'win') longestWin = Math.max(longestWin, streak)
+  else longestLoss = Math.max(longestLoss, streak)
+
+  // Current streak: walk backward from most recent day
+  const currentType = results[results.length - 1]
+  let currentCount = 0
+  for (let i = results.length - 1; i >= 0; i--) {
+    if (results[i] === currentType) {
+      currentCount++
+    } else {
+      break
+    }
+  }
+
+  return {
+    longestWinStreak: longestWin,
+    longestLossStreak: longestLoss,
+    currentStreak: { type: currentType, count: currentCount },
+  }
+}
+
+// ─── US-011: Monthly Performance Breakdown ────────────────────────────────────
+
+/**
+ * Calculate monthly performance breakdown from raw trades.
+ *
+ * Algorithm:
+ * 1. Group trades by YYYY-MM of tradeDate, ordered ascending.
+ * 2. For each month:
+ *    - Count total trades.
+ *    - Sum gross P&L: sell inflows minus buy outflows per trade.
+ *    - Allocate charges proportionally by trade count / total trades.
+ *    - Compute net P&L (gross - charges).
+ *    - Compute win rate from symbol-level closed P&L entries
+ *      whose first trade date falls in that month.
+ * 3. Return sorted array (ascending by month).
+ *
+ * Edge cases:
+ * - No trades → empty array.
+ * - Month with zero trades → excluded.
+ * - No charges → charges allocated as 0.
+ */
+export function calculateMonthlyBreakdown(
+  trades: RawTrade[],
+  pnlSummary: PnLSummary,
+  _charges: ChargesBreakdown,
+  symbolPnL: SymbolPnL[] = [],
+): MonthlyMetric[] {
+  if (trades.length === 0) return []
+
+  // Group trades by YYYY-MM
+  const monthTradeMap = new Map<string, RawTrade[]>()
+  for (const t of trades) {
+    const month = t.tradeDate.slice(0, 7) // 'YYYY-MM'
+    const bucket = monthTradeMap.get(month)
+    if (bucket) {
+      bucket.push(t)
+    } else {
+      monthTradeMap.set(month, [t])
+    }
+  }
+
+  const totalTrades = trades.length
+  const totalChargesAlloc = pnlSummary.charges.total - pnlSummary.charges.dpCharges
+
+  // Build a map: symbol → first trade month (to allocate win/loss per month)
+  const symbolFirstMonth = new Map<string, string>()
+  for (const t of trades) {
+    const month = t.tradeDate.slice(0, 7)
+    const existing = symbolFirstMonth.get(t.symbol)
+    if (!existing || month < existing) {
+      symbolFirstMonth.set(t.symbol, month)
+    }
+  }
+
+  // Group closed symbol P&L by their first-trade month
+  const monthSymbolPnL = new Map<string, SymbolPnL[]>()
+  for (const s of symbolPnL) {
+    if (s.openQuantity !== 0) continue // skip open positions
+    const month = symbolFirstMonth.get(s.symbol)
+    if (!month) continue
+    const bucket = monthSymbolPnL.get(month)
+    if (bucket) {
+      bucket.push(s)
+    } else {
+      monthSymbolPnL.set(month, [s])
+    }
+  }
+
+  const sortedMonths = Array.from(monthTradeMap.keys()).sort()
+
+  return sortedMonths.map((month) => {
+    const monthTrades = monthTradeMap.get(month)!
+    const tradeCount = monthTrades.length
+
+    // Gross P&L: sell inflows - buy outflows
+    let grossPnL = 0
+    for (const t of monthTrades) {
+      grossPnL += t.tradeType === 'sell'
+        ? t.price * t.quantity
+        : -(t.price * t.quantity)
+    }
+
+    // Proportional charge allocation
+    const charges = totalTrades > 0
+      ? (tradeCount / totalTrades) * totalChargesAlloc
+      : 0
+
+    const netPnL = grossPnL - charges
+
+    // Win rate from closed symbol P&L in this month
+    const symbols = monthSymbolPnL.get(month) ?? []
+    const winners = symbols.filter((s) => s.realizedPnL > 0).length
+    const total = symbols.length
+    const winRate = total > 0 ? (winners / total) * 100 : 0
+
+    return {
+      month,
+      trades: tradeCount,
+      grossPnL,
+      charges,
+      netPnL,
+      winRate,
+    }
+  })
+}
+
+// ─── Legacy analytics (portfolio snapshot based) ─────────────────────────────
 
 /**
  * Compute portfolio-level analytics from a full snapshot.
@@ -83,6 +450,13 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
   const totalCharges = pnlSummary.charges.total - pnlSummary.charges.dpCharges
   const netPnL = pnlSummary.netPnL
 
+  // --- Sprint 2 advanced analytics ---
+  const sharpeRatio = calculateSharpeRatio(trades)
+  const maxDrawdown = calculateMaxDrawdown(trades)
+  const minDrawup = calculateMinDrawup(trades)
+  const streaks = calculateStreaks(trades)
+  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL)
+
   return {
     totalTrades,
     totalSymbols,
@@ -103,5 +477,10 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
     worstTrade,
     longestHolding,
     mostTradedSymbol,
+    sharpeRatio,
+    maxDrawdown,
+    minDrawup,
+    streaks,
+    monthlyBreakdown,
   }
 }

@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { findHeaderRow, coerceCell, extractLabeledValue, stripChargeSuffix } from '@/lib/parser/excel-utils'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { findHeaderRow, coerceCell, extractLabeledValue, stripChargeSuffix, loadXLSX } from '@/lib/parser/excel-utils'
+
+// Populate the XLSX cache so coerceCell date-serial branch works in tests
+beforeAll(async () => {
+  await loadXLSX()
+})
 
 describe('findHeaderRow', () => {
   it('finds header row with enough matching columns', () => {

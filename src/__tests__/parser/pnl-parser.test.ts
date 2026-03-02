@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as XLSX from 'xlsx'
 import { parsePnL } from '@/lib/parser/pnl-parser'
+import { loadXLSX } from '@/lib/parser/excel-utils'
 import { validateParsedData, validateChargesIntegrity } from '@/lib/parser/validation'
 import type { ParsePnLResult } from '@/lib/types'
 
@@ -12,7 +13,9 @@ const FIXTURE_PATH = path.resolve(__dirname, '../fixtures/pnl-UK4551.xlsx')
 
 let result: ParsePnLResult
 
-beforeAll(() => {
+beforeAll(async () => {
+  // Populate the XLSX cache so getSheetRows / coerceCell date branch work
+  await loadXLSX()
   const buffer = fs.readFileSync(FIXTURE_PATH)
   const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' })
   result = parsePnL({ workbook })

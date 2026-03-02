@@ -5,6 +5,9 @@
 *.csv
 *.ods
 
+# Exception: track E2E test fixtures
+!e2e/fixtures/*.xlsx
+
 # Dependencies
 node_modules/
 package-lock.json
