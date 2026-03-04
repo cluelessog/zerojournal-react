@@ -254,4 +254,8 @@ export interface ZeroJournalDBSchema {
     key: string
     value: ImportMetadata
   }
+  settings: {
+    key: string
+    value: unknown
+  }
 }

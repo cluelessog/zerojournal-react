@@ -16,6 +16,7 @@ import { groupOrders } from '@/lib/engine/order-grouper'
 import { computeAnalytics } from '@/lib/engine/analytics'
 import { buildTimeline } from '@/lib/engine/timeline'
 import { savePortfolio, loadPortfolio, deleteAll } from '@/lib/persistence/db'
+import { getSettings, setSettings } from '@/lib/persistence/storage'
 
 interface PortfolioStore {
   // State
@@ -28,6 +29,7 @@ interface PortfolioStore {
   timeline: TimelinePoint[]
   importMetadata: ImportMetadata | null
   isLoaded: boolean
+  initialCapital: number | null
 
   // Actions
   importData: (tradebookResult: ParseTradebookResult, pnlResult: ParsePnLResult) => Promise<void>
@@ -35,6 +37,8 @@ interface PortfolioStore {
   clearData: () => Promise<void>
   resetData: () => void
   getAnalytics: () => TradeAnalytics | null
+  setInitialCapital: (capital: number) => void
+  clearInitialCapital: () => void
 }
 
 const initialState = {
@@ -47,6 +51,7 @@ const initialState = {
   timeline: [],
   importMetadata: null,
   isLoaded: false,
+  initialCapital: null as number | null,
 }
 
 export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
@@ -69,7 +74,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       dpCharges: pnlResult.dpCharges,
     }
 
-    const analytics = computeAnalytics(snapshot)
+    const analytics = computeAnalytics(snapshot, get().initialCapital)
     const timeline = buildTimeline(tradebookResult.trades, pnlResult.symbolPnL, 'daily')
 
     snapshot.analytics = analytics
@@ -105,8 +110,14 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       if (!snapshot) {
         return
       }
+      // Load persisted initial capital before recomputing analytics
+      const savedCapital = await getSettings<number>('initialCapital')
+      if (savedCapital !== undefined && savedCapital !== null) {
+        set({ initialCapital: savedCapital })
+      }
       // Recompute analytics to ensure compatibility with any type changes (e.g., new MonthlyMetric.maxDrawdown field)
-      const currentAnalytics = computeAnalytics(snapshot)
+      const currentCapital = savedCapital ?? get().initialCapital
+      const currentAnalytics = computeAnalytics(snapshot, currentCapital)
       set({
         trades: snapshot.trades,
         orderGroups: snapshot.orderGroups,
@@ -141,5 +152,55 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
 
   getAnalytics: () => {
     return get().analytics
+  },
+
+  setInitialCapital: (capital: number) => {
+    set({ initialCapital: capital })
+    // Persist to IndexedDB
+    setSettings('initialCapital', capital).catch((err) =>
+      console.error('[PortfolioStore] Failed to persist initialCapital', err)
+    )
+    // Recompute analytics with the new capital
+    const state = get()
+    if (state.isLoaded && state.pnlSummary) {
+      const snapshot: PortfolioSnapshot = {
+        version: 1,
+        importedAt: state.importMetadata?.importedAt ?? new Date().toISOString(),
+        trades: state.trades,
+        orderGroups: state.orderGroups,
+        symbolPnL: state.symbolPnL,
+        pnlSummary: state.pnlSummary,
+        analytics: state.analytics!,
+        timeline: state.timeline,
+        dpCharges: state.dpCharges,
+      }
+      const analytics = computeAnalytics(snapshot, capital)
+      set({ analytics })
+    }
+  },
+
+  clearInitialCapital: () => {
+    set({ initialCapital: null })
+    // Remove from IndexedDB
+    setSettings('initialCapital', null).catch((err) =>
+      console.error('[PortfolioStore] Failed to clear initialCapital', err)
+    )
+    // Recompute analytics without capital
+    const state = get()
+    if (state.isLoaded && state.pnlSummary) {
+      const snapshot: PortfolioSnapshot = {
+        version: 1,
+        importedAt: state.importMetadata?.importedAt ?? new Date().toISOString(),
+        trades: state.trades,
+        orderGroups: state.orderGroups,
+        symbolPnL: state.symbolPnL,
+        pnlSummary: state.pnlSummary,
+        analytics: state.analytics!,
+        timeline: state.timeline,
+        dpCharges: state.dpCharges,
+      }
+      const analytics = computeAnalytics(snapshot, null)
+      set({ analytics })
+    }
   },
 }))

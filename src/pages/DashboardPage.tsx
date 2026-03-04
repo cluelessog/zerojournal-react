@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { MetricsCards } from '@/components/dashboard/MetricsCards'
 import { ChartSkeleton } from '@/components/dashboard/ChartSkeleton'
 import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
+import { CapitalInput } from '@/components/dashboard/CapitalInput'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const PnLTimelineChart = lazy(() =>
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const symbolPnL = usePortfolioStore((s) => s.symbolPnL)
   const pnlSummary = usePortfolioStore((s) => s.pnlSummary)
   const isLoaded = usePortfolioStore((s) => s.isLoaded)
+  const initialCapital = usePortfolioStore((s) => s.initialCapital)
 
   const [tab, setTab] = useState<'overview' | 'analytics' | 'trades'>('overview')
 
@@ -147,8 +149,8 @@ export default function DashboardPage() {
                         ? `${analytics.maxDrawdown.peakDate} → ${analytics.maxDrawdown.troughDate}`
                         : ''}
                     </div>
-                    <div className="text-xs text-amber-600">
-                      Absolute drawdown (set initial capital for %)
+                    <div className="mt-2">
+                      <CapitalInput />
                     </div>
                   </>
                 ) : (
@@ -226,8 +228,8 @@ export default function DashboardPage() {
                           <th className="px-4 py-2 text-right font-medium">Win %</th>
                           <th
                             className="px-4 py-2 text-right font-medium"
-                            title="Values shown in INR when no capital is set"
-                          >Max DD</th>
+                            title={initialCapital ? 'Percentage drawdown (based on initial capital)' : 'Values shown in INR when no capital is set'}
+                          >Max DD{initialCapital ? ' %' : ''}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -252,9 +254,11 @@ export default function DashboardPage() {
                               className={`px-4 py-2 text-right ${m.maxDrawdown < 0 ? 'text-red-600' : 'text-gray-600'} ${sparseMonth ? 'text-gray-400 italic' : ''}`}
                               title={sparseMonth ? 'Based on limited data (< 5 trades)' : undefined}
                             >
-                              {m.maxDrawdown < -100
-                                ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
-                                : `${m.maxDrawdown.toFixed(1)}%`}
+                              {initialCapital
+                                ? `${m.maxDrawdown.toFixed(1)}%`
+                                : m.maxDrawdown < -100
+                                  ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
+                                  : `${m.maxDrawdown.toFixed(1)}%`}
                               {sparseMonth ? '*' : ''}
                             </td>
                           </tr>

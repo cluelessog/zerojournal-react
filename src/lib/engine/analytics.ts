@@ -107,28 +107,34 @@ function buildSymbolCloseDate(trades: RawTrade[]): Map<string, string> {
  *
  * Also returns peakDate, troughDate, status, and mode.
  */
-function computeHWMDrawdown(
+export function computeHWMDrawdown(
   cumulative: Array<{ date: string; value: number }>,
+  initialCapital?: number | null,
 ): DrawdownMetric {
   if (cumulative.length === 0) {
     return { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   }
 
-  let peak = 0
+  const hasCapital = initialCapital != null && initialCapital > 0
+
+  // When initialCapital is set, equity = capital + cumPnL, and peak starts at capital.
+  // This ensures percentage drawdown is always computed relative to the capital base.
+  let peak = hasCapital ? initialCapital : 0
   let peakDate = ''
   let maxDrawdown = 0
   let drawdownPeakDate = ''
   let drawdownTroughDate = ''
 
   for (const point of cumulative) {
-    if (point.value > peak) {
-      peak = point.value
+    const equity = hasCapital ? initialCapital + point.value : point.value
+    if (equity > peak) {
+      peak = equity
       peakDate = point.date
     }
     // Only compute percentage drawdown when the high-water mark is positive.
     if (peak > 0) {
       // Clamp to [-100%, 0%]: drawdown can't exceed -100% (total loss of capital)
-      const drawdown = Math.max(-100, (point.value - peak) / Math.abs(peak) * 100)
+      const drawdown = Math.max(-100, (equity - peak) / Math.abs(peak) * 100)
       if (drawdown < maxDrawdown) {
         maxDrawdown = drawdown
         drawdownPeakDate = peakDate
@@ -149,6 +155,7 @@ function computeHWMDrawdown(
   }
 
   // Peak never went positive: check for absolute drawdown (curve goes negative)
+  // (This path only applies when no initialCapital is set)
   let minValue = 0
   let minDate = ''
   for (const point of cumulative) {
@@ -190,6 +197,7 @@ function computeHWMDrawdown(
 export function calculateMaxDrawdown(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
+  initialCapital?: number | null,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
@@ -217,7 +225,7 @@ export function calculateMaxDrawdown(
     cumulative.push({ date, value: running })
   }
 
-  return computeHWMDrawdown(cumulative)
+  return computeHWMDrawdown(cumulative, initialCapital)
 }
 
 /**
@@ -392,6 +400,7 @@ export function calculateMonthlyBreakdown(
   pnlSummary: PnLSummary,
   _charges: ChargesBreakdown,
   symbolPnL: SymbolPnL[] = [],
+  initialCapital?: number | null,
 ): MonthlyMetric[] {
   if (trades.length === 0) return []
 
@@ -513,7 +522,7 @@ export function calculateMonthlyBreakdown(
       monthRunning += monthDateMap.get(date)!
       monthCumulative.push({ date, value: monthRunning })
     }
-    const monthDDResult = computeHWMDrawdown(monthCumulative)
+    const monthDDResult = computeHWMDrawdown(monthCumulative, initialCapital)
     const monthMaxDrawdown = monthDDResult.value
 
     return {
@@ -537,7 +546,7 @@ export function calculateMonthlyBreakdown(
  * win/loss classification, best/worst trades, and realized P&L.
  * Uses trades[] for trading-day count and trade totals.
  */
-export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
+export function computeAnalytics(snapshot: PortfolioSnapshot, initialCapital?: number | null): TradeAnalytics {
   const { trades, symbolPnL, pnlSummary, orderGroups } = snapshot
 
   // --- Trade counts ---
@@ -615,10 +624,10 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
 
   // --- Sprint 2 advanced analytics ---
   const sharpeRatio = calculateSharpeRatio(trades)
-  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades)
+  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital)
   const minDrawup = calculateMinDrawup(symbolPnL, trades)
   const streaks = calculateStreaks(trades)
-  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL)
+  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL, initialCapital)
 
   return {
     totalTrades,
