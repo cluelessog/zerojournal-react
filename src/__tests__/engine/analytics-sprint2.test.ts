@@ -818,3 +818,83 @@ describe('calculateSharpeRatio — behavioral correctness', () => {
     expect(sharpe5).toBeGreaterThan(sharpe10)
   })
 })
+
+describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
+  // Test 1: Extreme loss where cumulative goes deeply negative — should clamp to -100%
+  it('extreme cumulative loss deeply below peak clamps to -100%', () => {
+    // Peak at +1000, then plunge to -24000 should clamp to -100%, not -2500%
+    const pnls = [1000, -2000, -3000, -5000, -8000, -7000]
+    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot)
+
+    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
+    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
+    // Should be exactly -100% (clamped)
+    expect(result.maxDrawdown.value).toBe(-100)
+  })
+
+  // Test 2: Monthly drawdown with extreme loss clamps correctly
+  it('monthly extreme loss clamps to -100%', () => {
+    // Create a month where we peak at 1000 then lose 25000
+    const pnls = [500, 500, -1000, -2000, -3000, -5000, -8000, -7000]
+    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot)
+
+    // Monthly breakdown should have max drawdown clamped to [-100, 0]
+    for (const m of result.monthlyBreakdown) {
+      expect(m.maxDrawdown).toBeGreaterThanOrEqual(-100)
+      expect(m.maxDrawdown).toBeLessThanOrEqual(0)
+    }
+  })
+
+  // Test 3: Drawdown values never exceed -100% (sanity bounds)
+  it('all drawdown values are bounded by [-100, 0]', () => {
+    const pnls = [100, -50, 200, -80, 150, 300, -20, 400, -100, -200, -300, -150]
+    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot)
+
+    // Overall drawdown must be in [-100, 0]
+    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
+    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
+
+    // All monthly drawdowns must be in [-100, 0]
+    for (const m of result.monthlyBreakdown) {
+      expect(m.maxDrawdown).toBeGreaterThanOrEqual(-100)
+      expect(m.maxDrawdown).toBeLessThanOrEqual(0)
+    }
+  })
+
+  // Test 4: Moderate loss (no clamping needed)
+  it('moderate loss does not trigger clamping', () => {
+    const pnls = [100, -50, 100, -30, 50, -20]
+    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot)
+
+    // With moderate losses, drawdown should be between clamped -100 and 0
+    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
+    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
+    // Should be around -30% to -50%, not clamped to -100%
+    expect(result.maxDrawdown.value).toBeGreaterThan(-60)
+  })
+
+  // Test 5: Total loss scenario (peak=100, current=0)
+  it('total portfolio loss clamps to -100%', () => {
+    // Start with 100, then lose it all
+    const pnls = [100, -100]
+    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
+    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot)
+
+    // Loss of exactly 100% from peak
+    expect(result.maxDrawdown.value).toBe(-100)
+  })
+})

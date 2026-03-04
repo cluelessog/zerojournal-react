@@ -132,7 +132,9 @@ export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
     // When peak === 0 the curve has never been in profit, so there is
     // no meaningful peak-to-trough percentage to report.
     if (peak > 0) {
-      const drawdown = (point.value - peak) / Math.abs(peak) * 100
+      // Clamp to [-100%, 0%]: drawdown can't exceed -100% (total loss of capital)
+      // When cash-flow cumulative goes deeply negative, formula exceeds -100%; clamp it
+      const drawdown = Math.max(-100, (point.value - peak) / Math.abs(peak) * 100)
       if (drawdown < maxDrawdown) {
         maxDrawdown = drawdown
         drawdownPeakDate = peakDate
@@ -435,7 +437,8 @@ export function calculateMonthlyBreakdown(
         monthPeak = monthRunning
       }
       if (monthPeak > 0) {
-        const dd = (monthRunning - monthPeak) / Math.abs(monthPeak) * 100
+        // Clamp to [-100%, 0%]: monthly drawdown can't exceed -100%
+        const dd = Math.max(-100, (monthRunning - monthPeak) / Math.abs(monthPeak) * 100)
         if (dd < monthMaxDrawdown) {
           monthMaxDrawdown = dd
         }
