@@ -127,14 +127,42 @@ export default function DashboardPage() {
               </div>
               <div className="rounded-lg border p-4">
                 <div className="text-sm text-gray-600 dark:text-gray-400">Max Drawdown</div>
-                <div className="mt-1 text-2xl font-bold text-red-600">
-                  {analytics.maxDrawdown.value.toFixed(1)}%
-                </div>
-                <div className="text-xs text-gray-500">
-                  {analytics.maxDrawdown.peakDate
-                    ? `${analytics.maxDrawdown.peakDate} → ${analytics.maxDrawdown.troughDate}`
-                    : 'No drawdown'}
-                </div>
+                {analytics.maxDrawdown.status === 'no_data' ? (
+                  <>
+                    <div className="mt-1 text-2xl font-bold text-gray-400">No data</div>
+                    <div className="text-xs text-gray-500">No closed positions</div>
+                  </>
+                ) : analytics.maxDrawdown.value === 0 ? (
+                  <>
+                    <div className="mt-1 text-2xl font-bold text-green-600">No drawdown</div>
+                    <div className="text-xs text-gray-500">Equity curve is flat or rising</div>
+                  </>
+                ) : analytics.maxDrawdown.mode === 'absolute' ? (
+                  <>
+                    <div className="mt-1 text-2xl font-bold text-red-600">
+                      Rs. {Math.abs(analytics.maxDrawdown.value).toLocaleString('en-IN')}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {analytics.maxDrawdown.peakDate
+                        ? `${analytics.maxDrawdown.peakDate} → ${analytics.maxDrawdown.troughDate}`
+                        : ''}
+                    </div>
+                    <div className="text-xs text-amber-600">
+                      Absolute drawdown (set initial capital for %)
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-1 text-2xl font-bold text-red-600">
+                      {analytics.maxDrawdown.value.toFixed(1)}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {analytics.maxDrawdown.peakDate
+                        ? `${analytics.maxDrawdown.peakDate} → ${analytics.maxDrawdown.troughDate}`
+                        : 'No drawdown'}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="rounded-lg border p-4">
                 <div className="text-sm text-gray-600 dark:text-gray-400">Min Drawup</div>
@@ -185,49 +213,62 @@ export default function DashboardPage() {
               {analytics.monthlyBreakdown.length === 0 ? (
                 <p className="text-sm text-gray-500">No monthly data available.</p>
               ) : (
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="w-full text-sm">
-                    <thead className="border-b bg-gray-50 dark:bg-gray-800">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium">Month</th>
-                        <th className="px-4 py-2 text-right font-medium">Trades</th>
-                        <th className="px-4 py-2 text-right font-medium">Gross P&amp;L</th>
-                        <th className="px-4 py-2 text-right font-medium">Charges</th>
-                        <th className="px-4 py-2 text-right font-medium">Net P&amp;L</th>
-                        <th className="px-4 py-2 text-right font-medium">Win %</th>
-                        <th className="px-4 py-2 text-right font-medium">Max DD</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {analytics.monthlyBreakdown.map((m) => {
-                        const monthTrades = trades.filter((t) => t.tradeDate.slice(0, 7) === m.month)
-                        const sparseMonth = monthTrades.length < 5
-                        return (
-                        <tr key={m.month} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                          <td className="px-4 py-2 font-medium">{m.month}</td>
-                          <td className="px-4 py-2 text-right">{m.trades}</td>
-                          <td className="px-4 py-2 text-right">{m.grossPnL.toFixed(2)}</td>
-                          <td className="px-4 py-2 text-right">{m.charges.toFixed(2)}</td>
-                          <td
-                            className={`px-4 py-2 text-right font-semibold ${
-                              m.netPnL >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}
-                          >
-                            {m.netPnL.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-2 text-right">{m.winRate.toFixed(1)}%</td>
-                          <td
-                            className={`px-4 py-2 text-right ${m.maxDrawdown < 0 ? 'text-red-600' : 'text-gray-600'} ${sparseMonth ? 'italic opacity-60' : ''}`}
-                            title={sparseMonth ? 'Based on limited data' : undefined}
-                          >
-                            {m.maxDrawdown.toFixed(1)}%
-                          </td>
+                <>
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full text-sm">
+                      <thead className="border-b bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                          <th className="px-4 py-2 text-left font-medium">Month</th>
+                          <th className="px-4 py-2 text-right font-medium">Trades</th>
+                          <th className="px-4 py-2 text-right font-medium">Gross P&amp;L</th>
+                          <th className="px-4 py-2 text-right font-medium">Charges</th>
+                          <th className="px-4 py-2 text-right font-medium">Net P&amp;L</th>
+                          <th className="px-4 py-2 text-right font-medium">Win %</th>
+                          <th
+                            className="px-4 py-2 text-right font-medium"
+                            title="Values shown in INR when no capital is set"
+                          >Max DD</th>
                         </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {analytics.monthlyBreakdown.map((m) => {
+                          const monthTrades = trades.filter((t) => t.tradeDate.slice(0, 7) === m.month)
+                          const sparseMonth = monthTrades.length < 5
+                          return (
+                          <tr key={m.month} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                            <td className="px-4 py-2 font-medium">{m.month}</td>
+                            <td className="px-4 py-2 text-right">{m.trades}</td>
+                            <td className="px-4 py-2 text-right">{m.grossPnL.toFixed(2)}</td>
+                            <td className="px-4 py-2 text-right">{m.charges.toFixed(2)}</td>
+                            <td
+                              className={`px-4 py-2 text-right font-semibold ${
+                                m.netPnL >= 0 ? 'text-green-600' : 'text-red-600'
+                              }`}
+                            >
+                              {m.netPnL.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-2 text-right">{m.winRate.toFixed(1)}%</td>
+                            <td
+                              className={`px-4 py-2 text-right ${m.maxDrawdown < 0 ? 'text-red-600' : 'text-gray-600'} ${sparseMonth ? 'text-gray-400 italic' : ''}`}
+                              title={sparseMonth ? 'Based on limited data (< 5 trades)' : undefined}
+                            >
+                              {m.maxDrawdown < -100
+                                ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
+                                : `${m.maxDrawdown.toFixed(1)}%`}
+                              {sparseMonth ? '*' : ''}
+                            </td>
+                          </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {analytics.monthlyBreakdown.some((m) => m.trades < 5) && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      * Months with fewer than 5 trades — drawdown may be less reliable
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>

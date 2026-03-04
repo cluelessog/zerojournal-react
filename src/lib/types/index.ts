@@ -80,9 +80,11 @@ export interface OrderGroup {
 }
 
 export interface DrawdownMetric {
-  value: number // percentage (negative for drawdown, positive for drawup)
+  value: number // percentage or absolute INR (negative for drawdown, positive for drawup)
   peakDate: string
   troughDate: string
+  status?: 'computed' | 'no_data'
+  mode?: 'percentage' | 'absolute'
 }
 
 export interface StreakMetric {

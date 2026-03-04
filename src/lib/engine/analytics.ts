@@ -80,43 +80,40 @@ export function calculateSharpeRatio(
 // ─── US-009: Max Drawdown & Min Drawup ────────────────────────────────────────
 
 /**
- * Calculate the Maximum Drawdown from a list of raw trades.
- *
- * Algorithm:
- * 1. Compute daily net P&L (sell inflows minus buy outflows) ordered by date.
- * 2. Build cumulative P&L series.
- * 3. Walk the series tracking the running peak and its date.
- * 4. At each point compute (current - peak) / |peak| * 100.
- * 5. Return the most negative value (worst decline) as a percentage.
- *
- * Returns value = 0 and empty dates when there are no drawdowns.
+ * Build a map: symbol -> last sell date (YYYY-MM-DD).
+ * Used to attribute SymbolPnL.realizedPnL to the date the position closed.
+ * Mirrors the pattern in timeline.ts (ADR-005: attribute P&L to last sell date).
  */
-export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
-  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '' }
-  if (trades.length === 0) return empty
-
-  // Build sorted daily P&L
-  const dailyMap = new Map<string, number>()
+function buildSymbolCloseDate(trades: RawTrade[]): Map<string, string> {
+  const closeDate = new Map<string, string>()
   for (const t of trades) {
-    const value = t.tradeType === 'sell'
-      ? t.price * t.quantity
-      : -(t.price * t.quantity)
-    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + value)
+    if (t.tradeType === 'sell') {
+      const existing = closeDate.get(t.symbol)
+      if (!existing || t.tradeDate > existing) {
+        closeDate.set(t.symbol, t.tradeDate)
+      }
+    }
+  }
+  return closeDate
+}
+
+/**
+ * Compute drawdown from a cumulative P&L series using high-water-mark algorithm.
+ *
+ * Returns:
+ * - When peak > 0: percentage drawdown (negative number, clamped to -100%)
+ * - When peak == 0 and curve goes negative: absolute drawdown in INR (negative number)
+ * - When peak == 0 and no negative values: 0
+ *
+ * Also returns peakDate, troughDate, status, and mode.
+ */
+function computeHWMDrawdown(
+  cumulative: Array<{ date: string; value: number }>,
+): DrawdownMetric {
+  if (cumulative.length === 0) {
+    return { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   }
 
-  const sortedDates = Array.from(dailyMap.keys()).sort()
-  if (sortedDates.length === 0) return empty
-
-  // Build cumulative series
-  const cumulative: Array<{ date: string; value: number }> = []
-  let running = 0
-  for (const date of sortedDates) {
-    running += dailyMap.get(date)!
-    cumulative.push({ date, value: running })
-  }
-
-  // Start high-water mark at 0 (implicit equity baseline before any trades).
-  // This ensures a curve that never goes positive returns value = 0.
   let peak = 0
   let peakDate = ''
   let maxDrawdown = 0
@@ -128,12 +125,9 @@ export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
       peak = point.value
       peakDate = point.date
     }
-    // Only compute drawdown when the high-water mark is positive.
-    // When peak === 0 the curve has never been in profit, so there is
-    // no meaningful peak-to-trough percentage to report.
+    // Only compute percentage drawdown when the high-water mark is positive.
     if (peak > 0) {
       // Clamp to [-100%, 0%]: drawdown can't exceed -100% (total loss of capital)
-      // When cash-flow cumulative goes deeply negative, formula exceeds -100%; clamp it
       const drawdown = Math.max(-100, (point.value - peak) / Math.abs(peak) * 100)
       if (drawdown < maxDrawdown) {
         maxDrawdown = drawdown
@@ -143,44 +137,127 @@ export function calculateMaxDrawdown(trades: RawTrade[]): DrawdownMetric {
     }
   }
 
-  return {
-    value: maxDrawdown,
-    peakDate: drawdownPeakDate,
-    troughDate: drawdownTroughDate,
+  // If peak went positive, return percentage drawdown
+  if (peak > 0) {
+    return {
+      value: maxDrawdown,
+      peakDate: drawdownPeakDate,
+      troughDate: drawdownTroughDate,
+      status: 'computed',
+      mode: maxDrawdown < 0 ? 'percentage' : undefined,
+    }
   }
+
+  // Peak never went positive: check for absolute drawdown (curve goes negative)
+  let minValue = 0
+  let minDate = ''
+  for (const point of cumulative) {
+    if (point.value < minValue) {
+      minValue = point.value
+      minDate = point.date
+    }
+  }
+
+  if (minValue < 0) {
+    // Absolute drawdown: the deepest negative point (in INR)
+    return {
+      value: minValue,
+      peakDate: cumulative[0].date,
+      troughDate: minDate,
+      status: 'computed',
+      mode: 'absolute',
+    }
+  }
+
+  // No drawdown at all (curve never went positive and never went negative)
+  return { value: 0, peakDate: '', troughDate: '', status: 'computed' }
 }
 
 /**
- * Calculate the Minimum Drawup from a list of raw trades.
+ * Calculate the Maximum Drawdown from SymbolPnL entries.
+ *
+ * Algorithm:
+ * 1. Use SymbolPnL.realizedPnL as the authoritative P&L source (from imported PnL file).
+ * 2. Filter to closed positions only (openQuantity === 0).
+ * 3. Map each closed symbol to its close date (last sell trade date).
+ * 4. Aggregate realizedPnL by close date to build cumulative series.
+ * 5. Walk the series tracking the running peak and its date.
+ * 6. At each point compute drawdown using computeHWMDrawdown helper.
+ * 7. Return the result with status and mode fields.
+ *
+ * Returns value = 0 with status 'no_data' when there are no data points.
+ */
+export function calculateMaxDrawdown(
+  symbolPnL: SymbolPnL[],
+  trades: RawTrade[],
+): DrawdownMetric {
+  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
+  if (symbolPnL.length === 0 || trades.length === 0) return empty
+
+  // Build symbol -> close date map
+  const closeDate = buildSymbolCloseDate(trades)
+
+  // Filter to closed positions and build aggregated P&L by close date
+  const dateMap = new Map<string, number>()
+  for (const s of symbolPnL) {
+    if (s.openQuantity !== 0) continue // Skip open positions
+    const closeDateStr = closeDate.get(s.symbol)
+    if (!closeDateStr) continue // No close date found for this symbol
+    dateMap.set(closeDateStr, (dateMap.get(closeDateStr) ?? 0) + s.realizedPnL)
+  }
+
+  const sortedDates = Array.from(dateMap.keys()).sort()
+  if (sortedDates.length === 0) return empty
+
+  // Build cumulative series from close-date P&L
+  const cumulative: Array<{ date: string; value: number }> = []
+  let running = 0
+  for (const date of sortedDates) {
+    running += dateMap.get(date)!
+    cumulative.push({ date, value: running })
+  }
+
+  return computeHWMDrawdown(cumulative)
+}
+
+/**
+ * Calculate the Minimum Drawup from SymbolPnL entries.
  *
  * Min drawup = the smallest recovery from a trough (closest to zero after a loss).
  * This identifies the most difficult / weakest recovery in the equity curve.
  *
  * Algorithm:
- * 1. Same cumulative P&L series as drawdown.
+ * 1. Same cumulative P&L series as drawdown (using SymbolPnL.realizedPnL).
  * 2. Track running trough and its date.
  * 3. At each point compute (current - trough) / |trough| * 100.
  * 4. Track the minimum positive drawup value (weakest recovery).
  */
-export function calculateMinDrawup(trades: RawTrade[]): DrawdownMetric {
-  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '' }
-  if (trades.length === 0) return empty
+export function calculateMinDrawup(
+  symbolPnL: SymbolPnL[],
+  trades: RawTrade[],
+): DrawdownMetric {
+  const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
+  if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  const dailyMap = new Map<string, number>()
-  for (const t of trades) {
-    const value = t.tradeType === 'sell'
-      ? t.price * t.quantity
-      : -(t.price * t.quantity)
-    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + value)
+  // Build symbol -> close date map
+  const closeDate = buildSymbolCloseDate(trades)
+
+  // Filter to closed positions and build aggregated P&L by close date
+  const dateMap = new Map<string, number>()
+  for (const s of symbolPnL) {
+    if (s.openQuantity !== 0) continue // Skip open positions
+    const closeDateStr = closeDate.get(s.symbol)
+    if (!closeDateStr) continue // No close date found for this symbol
+    dateMap.set(closeDateStr, (dateMap.get(closeDateStr) ?? 0) + s.realizedPnL)
   }
 
-  const sortedDates = Array.from(dailyMap.keys()).sort()
+  const sortedDates = Array.from(dateMap.keys()).sort()
   if (sortedDates.length === 0) return empty
 
   const cumulative: Array<{ date: string; value: number }> = []
   let running = 0
   for (const date of sortedDates) {
-    running += dailyMap.get(date)!
+    running += dateMap.get(date)!
     cumulative.push({ date, value: running })
   }
 
@@ -393,6 +470,9 @@ export function calculateMonthlyBreakdown(
 
   const sortedMonths = Array.from(monthTradeMap.keys()).sort()
 
+  // Build symbol -> close date map once, reused for all months
+  const symbolCloseDate = buildSymbolCloseDate(trades)
+
   return sortedMonths.map((month) => {
     const monthTrades = monthTradeMap.get(month)!
     const tradeCount = monthTrades.length
@@ -416,34 +496,25 @@ export function calculateMonthlyBreakdown(
     const winRate = total > 0 ? (winners / total) * 100 : 0
 
     // Per-month max drawdown using the high-water-mark algorithm.
-    // Data source: raw trade cash flow (sell inflows minus buy outflows),
-    // consistent with the overall drawdown calculation in calculateMaxDrawdown.
-    // Note: grossPnL uses SymbolPnL.realizedPnL (different source); drawdown
-    // uses cash flow so it captures intra-month equity curve shape.
-    const monthDailyMap = new Map<string, number>()
-    for (const t of monthTrades) {
-      const value = t.tradeType === 'sell'
-        ? t.price * t.quantity
-        : -(t.price * t.quantity)
-      monthDailyMap.set(t.tradeDate, (monthDailyMap.get(t.tradeDate) ?? 0) + value)
+    // Data source: SymbolPnL.realizedPnL for positions closing within this month,
+    // ordered by close date. This captures the intra-month equity curve shape.
+    const monthDateMap = new Map<string, number>()
+    for (const s of closedSymbols) {
+      const closeDate = symbolCloseDate.get(s.symbol)
+      if (closeDate) {
+        monthDateMap.set(closeDate, (monthDateMap.get(closeDate) ?? 0) + s.realizedPnL)
+      }
     }
-    const monthSortedDates = Array.from(monthDailyMap.keys()).sort()
+    // Build cumulative series for the month and use shared HWM helper
+    const monthSortedDates = Array.from(monthDateMap.keys()).sort()
+    const monthCumulative: Array<{ date: string; value: number }> = []
     let monthRunning = 0
-    let monthPeak = 0
-    let monthMaxDrawdown = 0
     for (const date of monthSortedDates) {
-      monthRunning += monthDailyMap.get(date)!
-      if (monthRunning > monthPeak) {
-        monthPeak = monthRunning
-      }
-      if (monthPeak > 0) {
-        // Clamp to [-100%, 0%]: monthly drawdown can't exceed -100%
-        const dd = Math.max(-100, (monthRunning - monthPeak) / Math.abs(monthPeak) * 100)
-        if (dd < monthMaxDrawdown) {
-          monthMaxDrawdown = dd
-        }
-      }
+      monthRunning += monthDateMap.get(date)!
+      monthCumulative.push({ date, value: monthRunning })
     }
+    const monthDDResult = computeHWMDrawdown(monthCumulative)
+    const monthMaxDrawdown = monthDDResult.value
 
     return {
       month,
@@ -544,8 +615,8 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
 
   // --- Sprint 2 advanced analytics ---
   const sharpeRatio = calculateSharpeRatio(trades)
-  const maxDrawdown = calculateMaxDrawdown(trades)
-  const minDrawup = calculateMinDrawup(trades)
+  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades)
+  const minDrawup = calculateMinDrawup(symbolPnL, trades)
   const streaks = calculateStreaks(trades)
   const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL)
 

@@ -113,89 +113,235 @@ describe('calculateSharpeRatio', () => {
 
 describe('calculateMaxDrawdown', () => {
   it('returns 0 value for empty trades', () => {
-    const result = calculateMaxDrawdown([])
+    const result = calculateMaxDrawdown([], [])
     expect(result.value).toBe(0)
   })
 
   it('returns 0 for monotonically increasing equity curve', () => {
-    const trades = makeTradesFromPnLs([100, 200, 300, 400, 500])
-    const result = calculateMaxDrawdown(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: 200, closeDateOffset: 1 },
+      { pnl: 300, closeDateOffset: 2 },
+      { pnl: 400, closeDateOffset: 3 },
+      { pnl: 500, closeDateOffset: 4 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
     expect(result.value).toBe(0)
   })
 
   it('detects drawdown when equity drops after peak', () => {
     // Cumulative: +1000, +1500, +750 (drop from 1500 → 750 = -50%)
-    const trades = makeTradesFromPnLs([1000, 500, -750])
-    const result = calculateMaxDrawdown(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: 500, closeDateOffset: 1 },
+      { pnl: -750, closeDateOffset: 2 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
     expect(result.value).toBeLessThan(0)
     expect(result.peakDate).toBeTruthy()
     expect(result.troughDate).toBeTruthy()
   })
 
   it('calculates approximately -50% drawdown from peak to trough', () => {
-    // Net daily: +1000, +0, -500 → cumulative: 1000, 1000, 500 → drawdown = -50%
-    const trades = makeTradesFromPnLs([1000, 0, -500])
-    const result = calculateMaxDrawdown(trades)
+    // Cumulative: 1000, 1000, 500 → drawdown = -50%
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: 0, closeDateOffset: 1 },
+      { pnl: -500, closeDateOffset: 2 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
     // (500 - 1000) / 1000 * 100 = -50%
     expect(result.value).toBeCloseTo(-50, 0)
   })
 
-  it('handles single trade loss', () => {
-    const trades = makeTradesFromPnLs([-500])
-    const result = calculateMaxDrawdown(trades)
-    // Curve never goes positive: peak stays at 0, no drawdown computed
-    expect(result.value).toBe(0)
+  it('returns absolute drawdown for single trade loss (no positive peak)', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: -500, closeDateOffset: 0 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
+    // Curve never goes positive: returns absolute INR drawdown
+    expect(result.value).toBe(-500)
+    expect(result.status).toBe('computed')
+    expect(result.mode).toBe('absolute')
+    expect(result.peakDate).toBeTruthy()
+    expect(result.troughDate).toBeTruthy()
   })
 
   it('finds worst drawdown among multiple drawdowns', () => {
     // Cumulative: 100, 50 (dd=-50%), 150, 100 (dd=-33%), 200
     // Worst drawdown: 100→50 = -50%
-    const trades = makeTradesFromPnLs([100, -50, 100, -50, 100])
-    const result = calculateMaxDrawdown(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -50, closeDateOffset: 1 },
+      { pnl: 100, closeDateOffset: 2 },
+      { pnl: -50, closeDateOffset: 3 },
+      { pnl: 100, closeDateOffset: 4 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
     expect(result.value).toBeCloseTo(-50, 0)
   })
 
   it('returns dates when drawdown occurs', () => {
-    const trades = makeTradesFromPnLs([1000, -500])
-    const result = calculateMaxDrawdown(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -500, closeDateOffset: 1 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
     expect(result.peakDate).toBeTruthy()
     expect(result.troughDate).toBeTruthy()
     expect(result.troughDate >= result.peakDate).toBe(true)
+  })
+
+  // ─── New tests for absolute drawdown & status/mode fields ──────────────────
+
+  it('returns absolute drawdown for always-negative multi-point curve', () => {
+    // Cumulative: -200, -700, -400. Deepest trough is -700
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: -200, closeDateOffset: 0 },
+      { pnl: -500, closeDateOffset: 1 },
+      { pnl: 300, closeDateOffset: 2 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
+    expect(result.value).toBe(-700)
+    expect(result.status).toBe('computed')
+    expect(result.mode).toBe('absolute')
+  })
+
+  it('returns percentage drawdown with computed status when peak is positive', () => {
+    // Cumulative: 1000, 500 -> drawdown = (500-1000)/1000*100 = -50%
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -500, closeDateOffset: 1 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
+    expect(result.value).toBeCloseTo(-50, 0)
+    expect(result.status).toBe('computed')
+    expect(result.mode).toBe('percentage')
+  })
+
+  it('returns status computed with value 0 for monotonically increasing curve', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: 200, closeDateOffset: 1 },
+    ])
+    const result = calculateMaxDrawdown(symbolPnL, trades)
+    expect(result.value).toBe(0)
+    expect(result.status).toBe('computed')
+  })
+
+  it('returns status no_data for empty input', () => {
+    const result = calculateMaxDrawdown([], [])
+    expect(result.value).toBe(0)
+    expect(result.peakDate).toBe('')
+    expect(result.troughDate).toBe('')
+    expect(result.status).toBe('no_data')
+  })
+
+  it('monthly drawdown returns absolute drawdown for always-negative month', () => {
+    // All trades in a single month, all losing money
+    // Symbols: DD0=-300, DD1=-200 → cumulative: -300, -500
+    // Peak never goes positive → absolute drawdown = -500
+    const trades: RawTrade[] = [
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10, symbol: 'DD0', orderExecutionTime: '2025-01-01T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 70, quantity: 10, symbol: 'DD0', orderExecutionTime: '2025-01-02T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10, symbol: 'DD1', orderExecutionTime: '2025-01-01T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-03', tradeType: 'sell', price: 80, quantity: 10, symbol: 'DD1', orderExecutionTime: '2025-01-03T15:00:00' }),
+    ]
+    const symbolPnL = [
+      makeSymbolPnL('DD0', -300),
+      makeSymbolPnL('DD1', -200),
+    ]
+    const summary = makePnLSummary()
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    expect(result).toHaveLength(1)
+    // Monthly drawdown should be negative (absolute INR) instead of 0
+    expect(result[0].maxDrawdown).toBeLessThan(0)
+    expect(result[0].maxDrawdown).toBe(-500)
+  })
+
+  it('monthly and overall drawdown use same algorithm (consistent results)', () => {
+    // Single month with all trades, results should match
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -500, closeDateOffset: 1 },
+      { pnl: 200, closeDateOffset: 2 },
+    ])
+    const overallResult = calculateMaxDrawdown(symbolPnL, trades)
+    const summary = makePnLSummary()
+    const monthlyResult = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    // All trades are in the same month, so monthly drawdown should equal overall
+    expect(monthlyResult).toHaveLength(1)
+    expect(monthlyResult[0].maxDrawdown).toBeCloseTo(overallResult.value, 0)
+  })
+
+  it('openQuantity alignment: timeline and analytics use same filter semantics', () => {
+    // Create data with a short position (negative openQuantity)
+    const shortSymbol = makeSymbolPnL('SHORT', 500, -5) // openQuantity = -5
+    const closedSymbol = makeSymbolPnL('CLOSED', 200) // openQuantity = 0
+    const trades: RawTrade[] = [
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10, symbol: 'SHORT' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 150, quantity: 5, symbol: 'SHORT' }),
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10, symbol: 'CLOSED' }),
+      makeTrade({ tradeDate: '2025-01-03', tradeType: 'sell', price: 120, quantity: 10, symbol: 'CLOSED' }),
+    ]
+    // calculateMaxDrawdown should skip SHORT (openQuantity !== 0) and only use CLOSED
+    const result = calculateMaxDrawdown([shortSymbol, closedSymbol], trades)
+    // Only CLOSED contributes: cumulative = [200], peak = 200, no drawdown
+    expect(result.value).toBe(0)
+    expect(result.status).toBe('computed')
   })
 })
 
 describe('calculateMinDrawup', () => {
   it('returns 0 value for empty trades', () => {
-    const result = calculateMinDrawup([])
+    const result = calculateMinDrawup([], [])
     expect(result.value).toBe(0)
   })
 
   it('returns 0 for monotonically decreasing equity (no recovery)', () => {
-    const trades = makeTradesFromPnLs([-100, -200, -300])
-    const result = calculateMinDrawup(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: -100, closeDateOffset: 0 },
+      { pnl: -200, closeDateOffset: 1 },
+      { pnl: -300, closeDateOffset: 2 },
+    ])
+    const result = calculateMinDrawup(symbolPnL, trades)
     // No recovery above trough → value stays 0
     expect(result.value).toBeGreaterThanOrEqual(0)
   })
 
   it('detects drawup after a loss', () => {
     // Cumulative: -500, -500+300 = -200 → drawup from -500 to -200 = 60%
-    const trades = makeTradesFromPnLs([-500, 300])
-    const result = calculateMinDrawup(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: -500, closeDateOffset: 0 },
+      { pnl: 300, closeDateOffset: 1 },
+    ])
+    const result = calculateMinDrawup(symbolPnL, trades)
     expect(result.value).toBeGreaterThan(0)
   })
 
   it('returns minimum recovery when multiple drawups exist', () => {
     // loss then small recovery, then bigger loss then bigger recovery
     // min drawup should be the smaller recovery
-    const trades = makeTradesFromPnLs([-1000, 100, -800, 600])
-    const result = calculateMinDrawup(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: -1000, closeDateOffset: 0 },
+      { pnl: 100, closeDateOffset: 1 },
+      { pnl: -800, closeDateOffset: 2 },
+      { pnl: 600, closeDateOffset: 3 },
+    ])
+    const result = calculateMinDrawup(symbolPnL, trades)
     expect(typeof result.value).toBe('number')
     expect(isNaN(result.value)).toBe(false)
   })
 
   it('returns non-negative value', () => {
-    const trades = makeTradesFromPnLs([500, -200, 300, -100, 150])
-    const result = calculateMinDrawup(trades)
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 500, closeDateOffset: 0 },
+      { pnl: -200, closeDateOffset: 1 },
+      { pnl: 300, closeDateOffset: 2 },
+      { pnl: -100, closeDateOffset: 3 },
+      { pnl: 150, closeDateOffset: 4 },
+    ])
+    const result = calculateMinDrawup(symbolPnL, trades)
     expect(result.value).toBeGreaterThanOrEqual(0)
   })
 })
@@ -309,6 +455,52 @@ function makeSymbolPnL(symbol: string, realizedPnL: number, openQuantity = 0): S
     openQuantity,
     previousClosingPrice: 100,
   }
+}
+
+/**
+ * Build paired SymbolPnL + trades for drawdown testing.
+ * Each entry gets a unique symbol with one buy on startDate+offset
+ * and one sell on startDate+closeDateOffset.
+ *
+ * @param entries Array of { pnl, closeDateOffset } where closeDateOffset is days from startDate
+ * @param startDate Base date for first position
+ */
+function makeDrawdownData(
+  entries: Array<{ pnl: number; closeDateOffset: number }>,
+  startDate = '2025-01-01',
+): { symbolPnL: SymbolPnL[]; trades: RawTrade[] } {
+  const base = new Date(startDate)
+  const symbolPnLList: SymbolPnL[] = []
+  const trades: RawTrade[] = []
+
+  for (let i = 0; i < entries.length; i++) {
+    const symbol = `DD${i}`
+    const closeDate = new Date(base)
+    closeDate.setDate(base.getDate() + entries[i].closeDateOffset)
+    const closeDateStr = closeDate.toISOString().split('T')[0]
+
+    // Buy trade on start date, sell trade on close date
+    trades.push(makeTrade({
+      tradeDate: startDate,
+      tradeType: 'buy',
+      price: 100,
+      quantity: 10,
+      symbol,
+      orderExecutionTime: `${startDate}T09:00:00`,
+    }))
+    trades.push(makeTrade({
+      tradeDate: closeDateStr,
+      tradeType: 'sell',
+      price: 100 + entries[i].pnl / 10,
+      quantity: 10,
+      symbol,
+      orderExecutionTime: `${closeDateStr}T15:00:00`,
+    }))
+
+    symbolPnLList.push(makeSymbolPnL(symbol, entries[i].pnl))
+  }
+
+  return { symbolPnL: symbolPnLList, trades }
 }
 
 describe('calculateMonthlyBreakdown', () => {
@@ -672,6 +864,34 @@ describe('calculateSharpeRatio — extended validation', () => {
   it('empty trades array: returns 0', () => {
     expect(calculateSharpeRatio([])).toBe(0)
   })
+
+  // Test 10: Hand-calculated Sharpe with varied returns (5-day reference from plan)
+  // This test validates the mathematical implementation against hand-calculated reference
+  // Day 1: Buy 100 @ 500, Sell @ 502 → daily_pnl = +200, daily_capital = 50000, pct_ret = 0.004
+  // Day 2: Buy 100 @ 500, Sell @ 504 → daily_pnl = +400, daily_capital = 50000, pct_ret = 0.008
+  // Day 3: Buy 100 @ 500, Sell @ 497 → daily_pnl = -300, daily_capital = 50000, pct_ret = -0.006
+  // Day 4: Buy 100 @ 500, Sell @ 503 → daily_pnl = +300, daily_capital = 50000, pct_ret = 0.006
+  // Day 5: Buy 100 @ 500, Sell @ 501 → daily_pnl = +100, daily_capital = 50000, pct_ret = 0.002
+  // R = [0.004, 0.008, -0.006, 0.006, 0.002]
+  // mean(R) = 0.0028, std(R) = 0.005404, Sharpe ≈ 7.99
+  it('hand-calculated reference: 5 days with varied returns → Sharpe ≈ 7.99', () => {
+    const trades: RawTrade[] = [
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-01T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'sell', price: 502, quantity: 100, orderExecutionTime: '2025-01-01T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-02T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 504, quantity: 100, orderExecutionTime: '2025-01-02T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-03', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-03T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-03', tradeType: 'sell', price: 497, quantity: 100, orderExecutionTime: '2025-01-03T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-04', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-04T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-04', tradeType: 'sell', price: 503, quantity: 100, orderExecutionTime: '2025-01-04T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-05', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-05T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-05', tradeType: 'sell', price: 501, quantity: 100, orderExecutionTime: '2025-01-05T15:00:00' }),
+    ]
+    const sharpe = calculateSharpeRatio(trades)
+    // Verify it's close to hand-calculated reference of 7.99 (with 0.1 tolerance for floating point)
+    expect(sharpe).toBeCloseTo(7.99, 1)
+    expect(isFinite(sharpe)).toBe(true)
+  })
 })
 
 // ─── Sprint 2 Extended: Monthly Drawdown (5 tests) ────────────────────────────
@@ -680,38 +900,49 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
   // Test 1: Hand-calculated reference (3-day month)
   // Day 1 cumPnL=1000, Day 2=1500 (peak), Day 3=750
   // drawdown = (750-1500)/1500 * 100 = -50%
-  it('hand-calculated: peak 1500 → trough 750 → maxDrawdown ≈ -50%', () => {
-    // makeTradesFromPnLs uses qty=10, buyPrice=100
-    // pnl[i] = (sellPrice - 100) * 10 → sellPrice = 100 + pnl/10
-    // Day1: cash = sell - buy = (100+100)*10 - 100*10 = 1000. Day2: +500. Day3: -750
-    const trades = makeTradesFromPnLs([1000, 500, -750], '2025-06-01')
+  it('hand-calculated: peak 1500 → trough 750 → maxDrawdown ≈ -50% (Month A)', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: 500, closeDateOffset: 1 },
+      { pnl: -750, closeDateOffset: 2 },
+    ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
     expect(result).toHaveLength(1)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
   })
 
   // Test 2: No drawdown (all wins — monotonically increasing)
   it('all positive PnL days: cumulative always rising → maxDrawdown = 0', () => {
-    const trades = makeTradesFromPnLs([100, 200, 300], '2025-06-01')
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: 200, closeDateOffset: 1 },
+      { pnl: 300, closeDateOffset: 2 },
+    ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
     expect(result[0].maxDrawdown).toBe(0)
   })
 
   // Test 3: Worst-case drawdown — peak on day 1, all losses after
   it('peak on day 1, all losses after: maxDrawdown is deeply negative', () => {
-    const trades = makeTradesFromPnLs([1000, -500, -400], '2025-06-01')
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -500, closeDateOffset: 1 },
+      { pnl: -400, closeDateOffset: 2 },
+    ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
     expect(result[0].maxDrawdown).toBeLessThan(-50)
   })
 
   // Test 4: Single trade month — no peak established → maxDrawdown = 0
   it('single buy+sell pair in month: maxDrawdown = 0 (single point, no sustained drawdown)', () => {
-    const trades = makeTradesFromPnLs([500], '2025-06-15')
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 500, closeDateOffset: 0 },
+    ], '2025-06-15')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
     expect(result[0].maxDrawdown).toBe(0)
   })
 
@@ -719,10 +950,41 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
   // cumulative: +100, +50 (dd=-50%), +150 (new peak), +100 (dd=-33%), +200 (new peak)
   // Worst drawdown: day1 peak=100 → day2 val=50 → dd = (50-100)/100*100 = -50%
   it('multiple peaks and troughs: reports worst (deepest) drawdown', () => {
-    const trades = makeTradesFromPnLs([100, -50, 100, -50, 100], '2025-06-01')
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -50, closeDateOffset: 1 },
+      { pnl: 100, closeDateOffset: 2 },
+      { pnl: -50, closeDateOffset: 3 },
+      { pnl: 100, closeDateOffset: 4 },
+    ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
+  })
+
+  // Test 6: Hand-calculated reference: 5-day month with multiple peaks and troughs (Month B)
+  // Day 1: pnl = +500  → cum = 500,  peak = 500
+  // Day 2: pnl = +300  → cum = 800,  peak = 800
+  // Day 3: pnl = -400  → cum = 400,  drawdown = (400-800)/800*100 = -50%
+  // Day 4: pnl = +600  → cum = 1000, peak = 1000
+  // Day 5: pnl = -200  → cum = 800,  drawdown = (800-1000)/1000*100 = -20%
+  // Max drawdown = -50% (worst of -50% and -20%)
+  it('hand-calculated reference: 5-day month with multiple peaks → maxDrawdown = -50% (Month B)', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 500, closeDateOffset: 0 },
+      { pnl: 300, closeDateOffset: 1 },
+      { pnl: -400, closeDateOffset: 2 },
+      { pnl: 600, closeDateOffset: 3 },
+      { pnl: -200, closeDateOffset: 4 },
+    ], '2025-07-01')
+    const summary = makePnLSummary()
+    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    // Should have exactly one month in the result
+    expect(result.length).toBe(1)
+    // Max drawdown should be -50% (from 800 peak to 400 trough)
+    expect(result[0].maxDrawdown).toBeCloseTo(-50, 1)
+    // Verify it's tracking the deepest drawdown, not just the last one (-20%)
+    expect(result[0].maxDrawdown).toBeLessThan(-49) // Much less than -20%
   })
 })
 
@@ -823,9 +1085,14 @@ describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
   // Test 1: Extreme loss where cumulative goes deeply negative — should clamp to -100%
   it('extreme cumulative loss deeply below peak clamps to -100%', () => {
     // Peak at +1000, then plunge to -24000 should clamp to -100%, not -2500%
-    const pnls = [1000, -2000, -3000, -5000, -8000, -7000]
-    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
-    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -2000, closeDateOffset: 1 },
+      { pnl: -3000, closeDateOffset: 2 },
+      { pnl: -5000, closeDateOffset: 3 },
+      { pnl: -8000, closeDateOffset: 4 },
+      { pnl: -7000, closeDateOffset: 5 },
+    ], '2025-01-02')
     const snapshot = makeMinimalSnapshot(trades, symbolPnL)
     const result = computeAnalytics(snapshot)
 
@@ -888,9 +1155,10 @@ describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
   // Test 5: Total loss scenario (peak=100, current=0)
   it('total portfolio loss clamps to -100%', () => {
     // Start with 100, then lose it all
-    const pnls = [100, -100]
-    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
-    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -100, closeDateOffset: 1 },
+    ], '2025-01-02')
     const snapshot = makeMinimalSnapshot(trades, symbolPnL)
     const result = computeAnalytics(snapshot)
 

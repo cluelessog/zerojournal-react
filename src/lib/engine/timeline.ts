@@ -7,7 +7,7 @@ type Aggregation = 'daily' | 'weekly' | 'monthly'
  * Build a P&L timeline by attributing each symbol's realized P&L
  * to the last sell date for that symbol (v1 simplification per ADR-005).
  *
- * Open positions (openQuantity > 0) are excluded from the timeline.
+ * Open positions (openQuantity !== 0) are excluded from the timeline.
  */
 export function buildTimeline(
   trades: RawTrade[],
@@ -36,8 +36,8 @@ export function buildTimeline(
   const dateMap = new Map<string, { pnl: number; count: number }>()
 
   for (const s of symbolPnL) {
-    // Skip open positions
-    if (s.openQuantity > 0) continue
+    // Skip open positions (both long and short) — only closed positions contribute to the timeline
+    if (s.openQuantity !== 0) continue
 
     const closeDate = lastSellDate.get(s.symbol)
     if (!closeDate) continue
