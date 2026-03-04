@@ -95,12 +95,13 @@ export interface StreakMetric {
 }
 
 export interface MonthlyMetric {
-  month: string     // YYYY-MM format
+  month: string       // YYYY-MM format
   trades: number
   grossPnL: number
   charges: number
   netPnL: number
-  winRate: number   // 0-100
+  winRate: number     // 0-100
+  maxDrawdown: number // percentage, <= 0 (peak-to-trough within the month)
 }
 
 export interface TradeAnalytics {

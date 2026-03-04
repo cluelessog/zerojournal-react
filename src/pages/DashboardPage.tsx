@@ -116,7 +116,12 @@ export default function DashboardPage() {
             {/* Row 1: Sharpe, Max DD, Min DU */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <div className="rounded-lg border p-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400">Sharpe Ratio</div>
+                <div
+                  className="text-sm text-gray-600 dark:text-gray-400"
+                  title="Sharpe Ratio uses daily invested capital for percentage returns (standard methodology)"
+                >
+                  Sharpe Ratio
+                </div>
                 <div className="mt-1 text-2xl font-bold">{analytics.sharpeRatio.toFixed(2)}</div>
                 <div className="text-xs text-gray-500">Risk-adjusted returns</div>
               </div>
@@ -190,10 +195,14 @@ export default function DashboardPage() {
                         <th className="px-4 py-2 text-right font-medium">Charges</th>
                         <th className="px-4 py-2 text-right font-medium">Net P&amp;L</th>
                         <th className="px-4 py-2 text-right font-medium">Win %</th>
+                        <th className="px-4 py-2 text-right font-medium">Max DD</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {analytics.monthlyBreakdown.map((m) => (
+                      {analytics.monthlyBreakdown.map((m) => {
+                        const monthTrades = trades.filter((t) => t.tradeDate.slice(0, 7) === m.month)
+                        const sparseMonth = monthTrades.length < 5
+                        return (
                         <tr key={m.month} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
                           <td className="px-4 py-2 font-medium">{m.month}</td>
                           <td className="px-4 py-2 text-right">{m.trades}</td>
@@ -207,8 +216,15 @@ export default function DashboardPage() {
                             {m.netPnL.toFixed(2)}
                           </td>
                           <td className="px-4 py-2 text-right">{m.winRate.toFixed(1)}%</td>
+                          <td
+                            className={`px-4 py-2 text-right ${m.maxDrawdown < 0 ? 'text-red-600' : 'text-gray-600'} ${sparseMonth ? 'italic opacity-60' : ''}`}
+                            title={sparseMonth ? 'Based on limited data' : undefined}
+                          >
+                            {m.maxDrawdown.toFixed(1)}%
+                          </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

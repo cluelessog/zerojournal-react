@@ -105,13 +105,15 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
       if (!snapshot) {
         return
       }
+      // Recompute analytics to ensure compatibility with any type changes (e.g., new MonthlyMetric.maxDrawdown field)
+      const currentAnalytics = computeAnalytics(snapshot)
       set({
         trades: snapshot.trades,
         orderGroups: snapshot.orderGroups,
         symbolPnL: snapshot.symbolPnL,
         pnlSummary: snapshot.pnlSummary,
         dpCharges: snapshot.dpCharges,
-        analytics: snapshot.analytics,
+        analytics: currentAnalytics,
         timeline: snapshot.timeline,
         isLoaded: true,
         importMetadata: {

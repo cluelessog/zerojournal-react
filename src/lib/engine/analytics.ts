@@ -29,16 +29,39 @@ export function calculateSharpeRatio(
 ): number {
   if (trades.length < 2) return 0
 
-  // Build daily P&L map: date → net cash flow (sells positive, buys negative)
+  // Build daily P&L map and daily invested capital map in one pass.
+  // Invested capital per day = sum of (price * quantity) for BUY trades only.
+  // Sell-only days are excluded from percentage returns because there is no
+  // capital base to denominate the return against.
+  //
+  // Sharpe Ratio using daily invested capital (standard methodology per
+  // Sharpe 1994, CFA curriculum):
+  //   pct_return[day] = dailyPnL[day] / dailyCapital[day]
+  //   Sharpe = ((mean(pct_returns) - rf_daily) / std(pct_returns)) * sqrt(252)
+  //   rf_daily = annualRate / 252
+  //   std uses N-1 denominator (sample variance)
   const dailyPnL = new Map<string, number>()
+  const dailyCapital = new Map<string, number>()
   for (const t of trades) {
-    const value = t.tradeType === 'sell'
+    const cashFlow = t.tradeType === 'sell'
       ? t.price * t.quantity
       : -(t.price * t.quantity)
-    dailyPnL.set(t.tradeDate, (dailyPnL.get(t.tradeDate) ?? 0) + value)
+    dailyPnL.set(t.tradeDate, (dailyPnL.get(t.tradeDate) ?? 0) + cashFlow)
+    if (t.tradeType === 'buy') {
+      dailyCapital.set(t.tradeDate, (dailyCapital.get(t.tradeDate) ?? 0) + t.price * t.quantity)
+    }
   }
 
-  const returns = Array.from(dailyPnL.values())
+  // Compute percentage returns only for days that have invested capital (buy trades).
+  // Skip days where dailyCapital === 0 (sell-only days).
+  const returns: number[] = []
+  for (const [date, pnl] of dailyPnL) {
+    const capital = dailyCapital.get(date) ?? 0
+    if (capital > 0) {
+      returns.push(pnl / capital)
+    }
+  }
+
   if (returns.length < 2) return 0
 
   const n = returns.length
@@ -390,6 +413,35 @@ export function calculateMonthlyBreakdown(
     const total = symbols.length
     const winRate = total > 0 ? (winners / total) * 100 : 0
 
+    // Per-month max drawdown using the high-water-mark algorithm.
+    // Data source: raw trade cash flow (sell inflows minus buy outflows),
+    // consistent with the overall drawdown calculation in calculateMaxDrawdown.
+    // Note: grossPnL uses SymbolPnL.realizedPnL (different source); drawdown
+    // uses cash flow so it captures intra-month equity curve shape.
+    const monthDailyMap = new Map<string, number>()
+    for (const t of monthTrades) {
+      const value = t.tradeType === 'sell'
+        ? t.price * t.quantity
+        : -(t.price * t.quantity)
+      monthDailyMap.set(t.tradeDate, (monthDailyMap.get(t.tradeDate) ?? 0) + value)
+    }
+    const monthSortedDates = Array.from(monthDailyMap.keys()).sort()
+    let monthRunning = 0
+    let monthPeak = 0
+    let monthMaxDrawdown = 0
+    for (const date of monthSortedDates) {
+      monthRunning += monthDailyMap.get(date)!
+      if (monthRunning > monthPeak) {
+        monthPeak = monthRunning
+      }
+      if (monthPeak > 0) {
+        const dd = (monthRunning - monthPeak) / Math.abs(monthPeak) * 100
+        if (dd < monthMaxDrawdown) {
+          monthMaxDrawdown = dd
+        }
+      }
+    }
+
     return {
       month,
       trades: tradeCount,
@@ -397,6 +449,7 @@ export function calculateMonthlyBreakdown(
       charges,
       netPnL,
       winRate,
+      maxDrawdown: monthMaxDrawdown,
     }
   })
 }
