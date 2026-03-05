@@ -243,6 +243,7 @@ export function calculateMaxDrawdown(
 export function calculateMinDrawup(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
+  initialCapital?: number | null,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
@@ -269,20 +270,27 @@ export function calculateMinDrawup(
     cumulative.push({ date, value: running })
   }
 
-  let trough = cumulative[0].value
+  const hasCapital = initialCapital != null && initialCapital > 0
+
+  // When capital is set, use equity (capital + cumPnL) for trough/recovery.
+  // This keeps drawup consistent with drawdown's capital-adjusted equity curve.
+  const equityOf = (pnl: number) => hasCapital ? initialCapital + pnl : pnl
+
+  let trough = equityOf(cumulative[0].value)
   let troughDate = cumulative[0].date
   let minDrawup: number | null = null
   let drawupTroughDate = cumulative[0].date
   let drawupPeakDate = cumulative[0].date
 
   for (const point of cumulative) {
-    if (point.value < trough) {
-      trough = point.value
+    const equity = equityOf(point.value)
+    if (equity < trough) {
+      trough = equity
       troughDate = point.date
     }
     // Only compute drawup when we are above the trough (actual recovery)
-    if (trough < 0 && point.value > trough) {
-      const drawup = (point.value - trough) / Math.abs(trough) * 100
+    if (trough < (hasCapital ? initialCapital : 0) && equity > trough) {
+      const drawup = (equity - trough) / Math.abs(trough) * 100
       if (minDrawup === null || drawup < minDrawup) {
         minDrawup = drawup
         drawupTroughDate = troughDate
@@ -524,6 +532,7 @@ export function calculateMonthlyBreakdown(
     }
     const monthDDResult = computeHWMDrawdown(monthCumulative, initialCapital)
     const monthMaxDrawdown = monthDDResult.value
+    const monthMaxDrawdownMode = monthDDResult.mode
 
     return {
       month,
@@ -533,6 +542,7 @@ export function calculateMonthlyBreakdown(
       netPnL,
       winRate,
       maxDrawdown: monthMaxDrawdown,
+      maxDrawdownMode: monthMaxDrawdownMode,
     }
   })
 }
@@ -625,7 +635,7 @@ export function computeAnalytics(snapshot: PortfolioSnapshot, initialCapital?: n
   // --- Sprint 2 advanced analytics ---
   const sharpeRatio = calculateSharpeRatio(trades)
   const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital)
-  const minDrawup = calculateMinDrawup(symbolPnL, trades)
+  const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital)
   const streaks = calculateStreaks(trades)
   const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL, initialCapital)
 

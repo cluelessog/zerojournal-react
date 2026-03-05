@@ -103,7 +103,8 @@ export interface MonthlyMetric {
   charges: number
   netPnL: number
   winRate: number     // 0-100
-  maxDrawdown: number // percentage, <= 0 (peak-to-trough within the month)
+  maxDrawdown: number // percentage or absolute INR, <= 0 (peak-to-trough within the month)
+  maxDrawdownMode?: 'percentage' | 'absolute'
 }
 
 export interface TradeAnalytics {

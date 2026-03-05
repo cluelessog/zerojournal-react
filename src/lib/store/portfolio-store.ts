@@ -37,8 +37,23 @@ interface PortfolioStore {
   clearData: () => Promise<void>
   resetData: () => void
   getAnalytics: () => TradeAnalytics | null
-  setInitialCapital: (capital: number) => void
-  clearInitialCapital: () => void
+  setInitialCapital: (capital: number) => Promise<void>
+  clearInitialCapital: () => Promise<void>
+}
+
+/** Build a PortfolioSnapshot from current store state (avoids triple duplication). */
+function buildSnapshotFromState(state: PortfolioStore): PortfolioSnapshot {
+  return {
+    version: 1,
+    importedAt: state.importMetadata?.importedAt ?? new Date().toISOString(),
+    trades: state.trades,
+    orderGroups: state.orderGroups,
+    symbolPnL: state.symbolPnL,
+    pnlSummary: state.pnlSummary!,
+    analytics: state.analytics!,
+    timeline: state.timeline,
+    dpCharges: state.dpCharges,
+  }
 }
 
 const initialState = {
@@ -142,8 +157,13 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   },
 
   clearData: async () => {
-    set(initialState)
-    await deleteAll()
+    try {
+      await deleteAll()
+      set(initialState)
+    } catch (err) {
+      console.error('[PortfolioStore] clearData failed — DB may still contain data', err)
+      throw err
+    }
   },
 
   resetData: () => {
@@ -154,52 +174,36 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     return get().analytics
   },
 
-  setInitialCapital: (capital: number) => {
-    set({ initialCapital: capital })
-    // Persist to IndexedDB
-    setSettings('initialCapital', capital).catch((err) =>
+  setInitialCapital: async (capital: number) => {
+    try {
+      await setSettings('initialCapital', capital)
+    } catch (err) {
       console.error('[PortfolioStore] Failed to persist initialCapital', err)
-    )
+      throw err
+    }
+    // Only update memory after successful persistence
+    set({ initialCapital: capital })
     // Recompute analytics with the new capital
     const state = get()
     if (state.isLoaded && state.pnlSummary) {
-      const snapshot: PortfolioSnapshot = {
-        version: 1,
-        importedAt: state.importMetadata?.importedAt ?? new Date().toISOString(),
-        trades: state.trades,
-        orderGroups: state.orderGroups,
-        symbolPnL: state.symbolPnL,
-        pnlSummary: state.pnlSummary,
-        analytics: state.analytics!,
-        timeline: state.timeline,
-        dpCharges: state.dpCharges,
-      }
-      const analytics = computeAnalytics(snapshot, capital)
+      const analytics = computeAnalytics(buildSnapshotFromState(state), capital)
       set({ analytics })
     }
   },
 
-  clearInitialCapital: () => {
-    set({ initialCapital: null })
-    // Remove from IndexedDB
-    setSettings('initialCapital', null).catch((err) =>
+  clearInitialCapital: async () => {
+    try {
+      await setSettings('initialCapital', null)
+    } catch (err) {
       console.error('[PortfolioStore] Failed to clear initialCapital', err)
-    )
+      throw err
+    }
+    // Only update memory after successful persistence
+    set({ initialCapital: null })
     // Recompute analytics without capital
     const state = get()
     if (state.isLoaded && state.pnlSummary) {
-      const snapshot: PortfolioSnapshot = {
-        version: 1,
-        importedAt: state.importMetadata?.importedAt ?? new Date().toISOString(),
-        trades: state.trades,
-        orderGroups: state.orderGroups,
-        symbolPnL: state.symbolPnL,
-        pnlSummary: state.pnlSummary,
-        analytics: state.analytics!,
-        timeline: state.timeline,
-        dpCharges: state.dpCharges,
-      }
-      const analytics = computeAnalytics(snapshot, null)
+      const analytics = computeAnalytics(buildSnapshotFromState(state), null)
       set({ analytics })
     }
   },

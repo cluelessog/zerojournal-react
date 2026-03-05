@@ -18,24 +18,39 @@ export function CapitalInput() {
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
 
-  function handleSave() {
+  async function handleSave() {
     const parsed = Number(inputValue.replace(/,/g, ''))
     if (isNaN(parsed) || parsed <= 0) {
       setError('Enter a positive number')
       return
     }
     setError('')
-    setInitialCapital(parsed)
-    setInputValue('')
-    setIsEditing(false)
+    setIsSaving(true)
+    try {
+      await setInitialCapital(parsed)
+      setInputValue('')
+      setIsEditing(false)
+    } catch {
+      setError('Failed to save — please try again')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  function handleClear() {
-    clearInitialCapital()
-    setInputValue('')
-    setError('')
-    setIsEditing(false)
+  async function handleClear() {
+    setIsSaving(true)
+    try {
+      await clearInitialCapital()
+      setInputValue('')
+      setError('')
+      setIsEditing(false)
+    } catch {
+      setError('Failed to clear — please try again')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -96,9 +111,10 @@ export function CapitalInput() {
           size="sm"
           variant="outline"
           onClick={handleSave}
+          disabled={isSaving}
           className="h-7 px-2 text-xs"
         >
-          Set Capital
+          {isSaving ? 'Saving...' : 'Set Capital'}
         </Button>
         {isEditing && (
           <button

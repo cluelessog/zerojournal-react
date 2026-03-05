@@ -254,11 +254,9 @@ export default function DashboardPage() {
                               className={`px-4 py-2 text-right ${m.maxDrawdown < 0 ? 'text-red-600' : 'text-gray-600'} ${sparseMonth ? 'text-gray-400 italic' : ''}`}
                               title={sparseMonth ? 'Based on limited data (< 5 trades)' : undefined}
                             >
-                              {initialCapital
-                                ? `${m.maxDrawdown.toFixed(1)}%`
-                                : m.maxDrawdown < -100
-                                  ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
-                                  : `${m.maxDrawdown.toFixed(1)}%`}
+                              {m.maxDrawdownMode === 'absolute'
+                                ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
+                                : `${m.maxDrawdown.toFixed(1)}%`}
                               {sparseMonth ? '*' : ''}
                             </td>
                           </tr>
