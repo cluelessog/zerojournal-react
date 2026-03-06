@@ -150,7 +150,7 @@ export function computeHWMDrawdown(
       peakDate: drawdownPeakDate,
       troughDate: drawdownTroughDate,
       status: 'computed',
-      mode: maxDrawdown < 0 ? 'percentage' : undefined,
+      mode: 'percentage', // Always percentage when peak goes positive
     }
   }
 
@@ -177,7 +177,14 @@ export function computeHWMDrawdown(
   }
 
   // No drawdown at all (curve never went positive and never went negative)
-  return { value: 0, peakDate: '', troughDate: '', status: 'computed' }
+  // When capital is set, show as percentage (0%); otherwise no mode
+  return {
+    value: 0,
+    peakDate: '',
+    troughDate: '',
+    status: 'computed',
+    mode: hasCapital ? 'percentage' : undefined,
+  }
 }
 
 /**
