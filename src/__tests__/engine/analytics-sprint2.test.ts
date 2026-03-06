@@ -5,9 +5,10 @@ import {
   calculateMinDrawup,
   calculateStreaks,
   calculateMonthlyBreakdown,
+  calculateRollingExpectancy,
   computeAnalytics,
 } from '@/lib/engine/analytics'
-import type { RawTrade, PnLSummary, ChargesBreakdown, SymbolPnL, PortfolioSnapshot } from '@/lib/types'
+import type { RawTrade, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup } from '@/lib/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -348,17 +349,39 @@ describe('calculateMinDrawup', () => {
 
 // ─── US-010: Win/Loss Streaks ─────────────────────────────────────────────────
 
+/**
+ * Build SymbolPnL + RawTrade inputs for streak testing.
+ * Each pnl gets a unique symbol (S0, S1, ...) with one sell on a distinct date.
+ * startDate is the first close date; each subsequent symbol closes one day later.
+ */
+function makeStreakInputs(pnls: number[], startDate = '2025-01-01'): { symbolPnL: SymbolPnL[]; trades: RawTrade[] } {
+  const symbolPnL: SymbolPnL[] = []
+  const trades: RawTrade[] = []
+  const base = new Date(startDate)
+  for (let i = 0; i < pnls.length; i++) {
+    const d = new Date(base)
+    d.setDate(base.getDate() + i)
+    const date = d.toISOString().split('T')[0]
+    const sym = `S${i}`
+    symbolPnL.push(makeSymbolPnL(sym, pnls[i]))
+    // One buy + one sell so buildSymbolCloseDate maps sym -> date
+    trades.push(makeTrade({ symbol: sym, tradeDate: date, tradeType: 'buy', price: 100, quantity: 10 }))
+    trades.push(makeTrade({ symbol: sym, tradeDate: date, tradeType: 'sell', price: 100 + pnls[i] / 10, quantity: 10 }))
+  }
+  return { symbolPnL, trades }
+}
+
 describe('calculateStreaks', () => {
-  it('returns zeros for empty trades', () => {
-    const result = calculateStreaks([])
+  it('returns zeros for empty inputs', () => {
+    const result = calculateStreaks([], [])
     expect(result.longestWinStreak).toBe(0)
     expect(result.longestLossStreak).toBe(0)
     expect(result.currentStreak.count).toBe(0)
   })
 
   it('detects all-win streak', () => {
-    const trades = makeTradesFromPnLs([100, 200, 150, 180, 120])
-    const result = calculateStreaks(trades)
+    const { symbolPnL, trades } = makeStreakInputs([100, 200, 150, 180, 120])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestWinStreak).toBe(5)
     expect(result.longestLossStreak).toBe(0)
     expect(result.currentStreak.type).toBe('win')
@@ -366,8 +389,8 @@ describe('calculateStreaks', () => {
   })
 
   it('detects all-loss streak', () => {
-    const trades = makeTradesFromPnLs([-100, -200, -150, -180])
-    const result = calculateStreaks(trades)
+    const { symbolPnL, trades } = makeStreakInputs([-100, -200, -150, -180])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestLossStreak).toBe(4)
     expect(result.longestWinStreak).toBe(0)
     expect(result.currentStreak.type).toBe('loss')
@@ -375,32 +398,32 @@ describe('calculateStreaks', () => {
   })
 
   it('detects alternating streaks as max 1 each', () => {
-    const trades = makeTradesFromPnLs([100, -100, 100, -100, 100])
-    const result = calculateStreaks(trades)
+    const { symbolPnL, trades } = makeStreakInputs([100, -100, 100, -100, 100])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestWinStreak).toBe(1)
     expect(result.longestLossStreak).toBe(1)
   })
 
-  it('detects current streak from most recent trades', () => {
+  it('detects current streak from most recent close dates', () => {
     // win, win, win, loss, loss (last 2 are losses)
-    const trades = makeTradesFromPnLs([100, 200, 150, -100, -200])
-    const result = calculateStreaks(trades)
+    const { symbolPnL, trades } = makeStreakInputs([100, 200, 150, -100, -200])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.currentStreak.type).toBe('loss')
     expect(result.currentStreak.count).toBe(2)
   })
 
-  it('handles single trade win', () => {
-    const trades = makeTradesFromPnLs([100])
-    const result = calculateStreaks(trades)
+  it('handles single win', () => {
+    const { symbolPnL, trades } = makeStreakInputs([100])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestWinStreak).toBe(1)
     expect(result.longestLossStreak).toBe(0)
     expect(result.currentStreak.type).toBe('win')
     expect(result.currentStreak.count).toBe(1)
   })
 
-  it('handles single trade loss', () => {
-    const trades = makeTradesFromPnLs([-50])
-    const result = calculateStreaks(trades)
+  it('handles single loss', () => {
+    const { symbolPnL, trades } = makeStreakInputs([-50])
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestLossStreak).toBe(1)
     expect(result.longestWinStreak).toBe(0)
     expect(result.currentStreak.type).toBe('loss')
@@ -410,11 +433,41 @@ describe('calculateStreaks', () => {
   it('finds longest streak in mixed sequence', () => {
     // W W W L L W W W W W L → longest win = 5
     const pnls = [100, 200, 150, -50, -80, 100, 200, 150, 180, 120, -30]
-    const trades = makeTradesFromPnLs(pnls)
-    const result = calculateStreaks(trades)
+    const { symbolPnL, trades } = makeStreakInputs(pnls)
+    const result = calculateStreaks(symbolPnL, trades)
     expect(result.longestWinStreak).toBe(5)
     expect(result.longestLossStreak).toBe(2)
     expect(result.currentStreak.type).toBe('loss')
+    expect(result.currentStreak.count).toBe(1)
+  })
+
+  it('skips open positions when computing streaks', () => {
+    // Two closed symbols (win, loss) + one open position (should be ignored)
+    const { symbolPnL: closed, trades } = makeStreakInputs([100, -50])
+    const openPos = makeSymbolPnL('OPEN', 999, 10) // openQuantity != 0 → skip
+    const result = calculateStreaks([...closed, openPos], trades)
+    expect(result.longestWinStreak).toBe(1)
+    expect(result.longestLossStreak).toBe(1)
+  })
+
+  it('aggregates multiple symbols closing on same date as one day result', () => {
+    // Two symbols both close on 2025-01-01: +100 and +50 → net +150 → win day
+    const symbolPnL = [
+      makeSymbolPnL('A', 100),
+      makeSymbolPnL('B', 50),
+    ]
+    const date = '2025-01-01'
+    const trades: RawTrade[] = [
+      makeTrade({ symbol: 'A', tradeDate: date, tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'A', tradeDate: date, tradeType: 'sell', price: 110, quantity: 10 }),
+      makeTrade({ symbol: 'B', tradeDate: date, tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'B', tradeDate: date, tradeType: 'sell', price: 105, quantity: 10 }),
+    ]
+    const result = calculateStreaks(symbolPnL, trades)
+    // Both symbols close same day → 1 win day, streak = 1
+    expect(result.longestWinStreak).toBe(1)
+    expect(result.longestLossStreak).toBe(0)
+    expect(result.currentStreak.type).toBe('win')
     expect(result.currentStreak.count).toBe(1)
   })
 })
@@ -598,7 +651,7 @@ describe('calculateMonthlyBreakdown', () => {
 
 // ─── US-014: Integration Tests ────────────────────────────────────────────────
 
-function makeMinimalSnapshot(trades: RawTrade[], symbolPnL: SymbolPnL[] = []): PortfolioSnapshot {
+function makeMinimalSnapshot(trades: RawTrade[], symbolPnL: SymbolPnL[] = []): { trades: RawTrade[]; symbolPnL: SymbolPnL[]; pnlSummary: PnLSummary; orderGroups: OrderGroup[] } {
   const charges: ChargesBreakdown = {
     brokerage: 10, exchangeTxnCharges: 5, sebiTurnoverFee: 1,
     stampDuty: 2, stt: 8, gst: 5, dpCharges: 3, total: 31, // Total excludes DP charges (normalized)
@@ -610,15 +663,10 @@ function makeMinimalSnapshot(trades: RawTrade[], symbolPnL: SymbolPnL[] = []): P
     netPnL: symbolPnL.reduce((s, x) => s + x.realizedPnL, 0) - charges.total, // total already excludes DP
   }
   return {
-    version: 1,
-    importedAt: new Date().toISOString(),
     trades,
     orderGroups: [],
     symbolPnL,
     pnlSummary,
-    analytics: null as unknown as ReturnType<typeof computeAnalytics>,
-    timeline: [],
-    dpCharges: [],
   }
 }
 
@@ -1164,5 +1212,63 @@ describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
 
     // Loss of exactly 100% from peak
     expect(result.maxDrawdown.value).toBe(-100)
+  })
+})
+
+// ─── Rolling Expectancy ────────────────────────────────────────────────────────
+
+describe('calculateRollingExpectancy', () => {
+  function makeFIFOMatch(pnl: number, holdingDays = 1) {
+    return { symbol: 'X', buyDate: '2025-01-01', sellDate: '2025-01-02', quantity: 10, buyPrice: 100, sellPrice: 100 + pnl / 10, pnl, holdingDays }
+  }
+
+  it('returns empty array when fewer than window matches', () => {
+    const matches = [makeFIFOMatch(100), makeFIFOMatch(-50)]
+    expect(calculateRollingExpectancy(matches, 20)).toEqual([])
+  })
+
+  it('returns N-window+1 points for exactly N matches', () => {
+    const matches = Array.from({ length: 25 }, (_, i) => makeFIFOMatch(i % 2 === 0 ? 100 : -50))
+    const result = calculateRollingExpectancy(matches, 20)
+    expect(result).toHaveLength(6) // 25 - 20 + 1
+    expect(result[0].tradeNumber).toBe(20)
+    expect(result[result.length - 1].tradeNumber).toBe(25)
+  })
+
+  it('overall expectancy is correct for simple window', () => {
+    // 10 wins of +100 and 10 losses of -50 in a 20-trade window
+    const matches = [
+      ...Array.from({ length: 10 }, () => makeFIFOMatch(100)),
+      ...Array.from({ length: 10 }, () => makeFIFOMatch(-50)),
+    ]
+    const result = calculateRollingExpectancy(matches, 20)
+    expect(result).toHaveLength(1)
+    // winRate=0.5, avgWin=100, avgLoss=-50 → expectancy = 0.5*100 + 0.5*(-50) = 25
+    expect(result[0].overall).toBeCloseTo(25, 2)
+  })
+
+  it('intraday/swing split: intraday=0 when no intraday matches in window', () => {
+    // All swing matches (holdingDays=3)
+    const matches = Array.from({ length: 20 }, () => makeFIFOMatch(100, 3))
+    const result = calculateRollingExpectancy(matches, 20)
+    expect(result).toHaveLength(1)
+    expect(result[0].intraday).toBe(0)   // no intraday in window
+    expect(result[0].swing).toBeCloseTo(100, 2)
+    expect(result[0].overall).toBeCloseTo(100, 2)
+  })
+
+  it('window slides correctly: each point uses only the last window matches', () => {
+    // First 20: all losses (-50), last 1: big win (+1000)
+    const matches = [
+      ...Array.from({ length: 20 }, () => makeFIFOMatch(-50)),
+      makeFIFOMatch(1000),
+    ]
+    const result = calculateRollingExpectancy(matches, 20)
+    expect(result).toHaveLength(2)
+    // Point 1 (trades 1-20): all losses → expectancy = -50
+    expect(result[0].overall).toBeCloseTo(-50, 2)
+    // Point 2 (trades 2-21): 19 losses + 1 big win
+    // winRate=1/20=0.05, avgWin=1000, avgLoss=-50 → 0.05*1000 + 0.95*(-50) = 50 - 47.5 = 2.5
+    expect(result[1].overall).toBeCloseTo(2.5, 2)
   })
 })

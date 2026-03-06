@@ -37,6 +37,7 @@ export function findHeaderRow(
   minMatches = 5,
   maxScanRows = 30,
 ): { rowIndex: number; columnMap: Record<string, number> } | null {
+  const headerSet = new Set(expectedHeaders)
   const limit = Math.min(rows.length, maxScanRows)
   for (let i = 0; i < limit; i++) {
     const row = rows[i]
@@ -45,7 +46,7 @@ export function findHeaderRow(
     let matches = 0
     for (let j = 0; j < row.length; j++) {
       const cell = String(row[j] ?? '').trim()
-      if (expectedHeaders.includes(cell)) {
+      if (headerSet.has(cell)) {
         columnMap[cell] = j
         matches++
       }
@@ -101,10 +102,11 @@ export function coerceCell(value: unknown, targetType: CellTargetType): unknown 
       }
       // Excel serial number -> ISO date string
       if (typeof value === 'number' && value > 0) {
-        // _xlsxCache is guaranteed to be set before parsers call coerceCell,
-        // because parseTradeBookFile / parsePnLFile call loadXLSX() first.
+        // _xlsxCache must be set before parsers call coerceCell.
+        // Fail fast if loadXLSX() was not awaited — silent empty string would
+        // corrupt all date fields in every parsed trade.
         const XLSX = _xlsxCache
-        if (!XLSX) return ''
+        if (!XLSX) throw new Error('coerceCell: XLSX not loaded — call loadXLSX() before parsing')
         const date = XLSX.SSF.parse_date_code(value)
         if (!date) return ''
         const y = date.y
@@ -145,7 +147,7 @@ export function extractLabeledValue(
     const cellRaw = row[labelCol]
     if (cellRaw == null) continue
     const cellStr = String(cellRaw).trim().toLowerCase()
-    if (cellStr === lowerLabel || cellStr.startsWith(lowerLabel)) {
+    if (cellStr === lowerLabel) {
       const val = row[valueCol]
       if (val == null) return null
       const n = Number(val)
