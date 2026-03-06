@@ -1,12 +1,13 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Info } from 'lucide-react'
-import type { TradeAnalytics, PnLSummary } from '@/lib/types'
+import type { TradeAnalytics, PnLSummary, MonthlyMetric } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface MetricsCardsProps {
   analytics: TradeAnalytics
   pnlSummary: PnLSummary
+  monthlyBreakdown?: MonthlyMetric[]
 }
 
 function formatCurrency(value: number): string {
@@ -59,8 +60,12 @@ function getPnLColorClass(value: number): string {
   return 'text-gray-600 dark:text-gray-400'
 }
 
-export function MetricsCards({ analytics, pnlSummary }: MetricsCardsProps) {
-  const totalChargesExclDP = pnlSummary.charges.total - pnlSummary.charges.dpCharges
+export function MetricsCards({ analytics, pnlSummary, monthlyBreakdown }: MetricsCardsProps) {
+  // Calculate total charges from monthly breakdown (ensures consistency with Analysis tab)
+  // Falls back to pnlSummary total charges if monthlyBreakdown is unavailable
+  const totalChargesExclDP = monthlyBreakdown && monthlyBreakdown.length > 0
+    ? monthlyBreakdown.reduce((sum, m) => sum + m.charges, 0)
+    : pnlSummary.charges.total
 
   return (
     <div className="space-y-4">

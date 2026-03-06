@@ -601,13 +601,13 @@ describe('calculateMonthlyBreakdown', () => {
 function makeMinimalSnapshot(trades: RawTrade[], symbolPnL: SymbolPnL[] = []): PortfolioSnapshot {
   const charges: ChargesBreakdown = {
     brokerage: 10, exchangeTxnCharges: 5, sebiTurnoverFee: 1,
-    stampDuty: 2, stt: 8, gst: 5, dpCharges: 3, total: 34,
+    stampDuty: 2, stt: 8, gst: 5, dpCharges: 3, total: 31, // Total excludes DP charges (normalized)
   }
   const pnlSummary: PnLSummary = {
     totalRealizedPnL: symbolPnL.reduce((s, x) => s + x.realizedPnL, 0),
     totalUnrealizedPnL: 0,
     charges,
-    netPnL: symbolPnL.reduce((s, x) => s + x.realizedPnL, 0) - (charges.total - charges.dpCharges),
+    netPnL: symbolPnL.reduce((s, x) => s + x.realizedPnL, 0) - charges.total, // total already excludes DP
   }
   return {
     version: 1,

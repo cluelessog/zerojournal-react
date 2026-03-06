@@ -151,7 +151,7 @@ function buildTestSnapshot(): PortfolioSnapshot {
       stt: 8399,
       gst: 1760.53,
       dpCharges: 874.38,
-      total: 20780.3 + 874.38,
+      total: 20780.3,  // Normalized: excludes DP charges (parser ensures this)
     },
     netPnL: realizedPnL - 20780.3,
   }
@@ -234,9 +234,10 @@ describe('computeAnalytics', () => {
     expect(analytics.avgTradesPerDay).toBeCloseTo(18.18, 0)
   })
 
-  it('computes totalCharges excluding DP charges', () => {
-    // 20780.30 total charges in PnL (dpCharges = 874.38 in charges.total)
-    // our function: charges.total - charges.dpCharges
+  it('computes totalCharges (normalized to exclude DP charges)', () => {
+    // Parser normalizes charges.total to always exclude DP charges
+    // analytics.totalCharges = charges.total (no subtraction needed since parser handles normalization)
+    // Test fixture: charges.total = 20780.3 (already excludes DP), dpCharges = 874.38 (separate)
     expect(analytics.totalCharges).toBeCloseTo(20780.3, 1)
   })
 })

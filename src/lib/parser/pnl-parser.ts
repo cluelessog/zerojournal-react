@@ -72,13 +72,15 @@ export function parsePnL(input: { workbook: XLSXType.WorkBook }): ParsePnLResult
 
   // ── Phase 2: Charges breakdown ────────────────────────────────────────────
   const charges = parseChargesBreakdown(rows, warnings)
-  // Use the authoritative total from the summary section (more reliable)
-  if (totalCharges !== 0) {
-    charges.total = totalCharges
-  }
-
   // DP charges total comes from "Other Credit & Debit" line (negative = debit)
   charges.dpCharges = Math.abs(otherCreditDebit)
+  // Use the authoritative total from the summary section (more reliable)
+  // NOTE: The broker's summary total may include DP charges, so normalize to exclude them
+  if (totalCharges !== 0) {
+    // Ensure charges.total always excludes DP (consistent semantics)
+    // If summary total includes DP, we subtract it here
+    charges.total = Math.max(0, totalCharges - charges.dpCharges)
+  }
 
   // ── Phase 3: Per-symbol P&L rows ─────────────────────────────────────────
   const symbolPnL = parseSymbolPnL(rows, warnings)

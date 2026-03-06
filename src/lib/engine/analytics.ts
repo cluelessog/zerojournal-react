@@ -425,7 +425,8 @@ export function calculateMonthlyBreakdown(
   }
 
   const totalTrades = trades.length
-  const totalChargesAlloc = pnlSummary.charges.total - pnlSummary.charges.dpCharges
+  // Allocate ALL charges (including DP) across months to match PnL file breakdown
+  const totalChargesAlloc = pnlSummary.charges.total
 
   // Two maps serve two different purposes:
   //
@@ -628,8 +629,8 @@ export function computeAnalytics(snapshot: PortfolioSnapshot, initialCapital?: n
 
   // --- Realized P&L and charges from PnL summary ---
   const totalRealizedPnL = pnlSummary.totalRealizedPnL
-  // Total charges excludes DP charges (per spec: "excludes DP")
-  const totalCharges = pnlSummary.charges.total - pnlSummary.charges.dpCharges
+  // Total charges (already excludes DP charges from parser normalization)
+  const totalCharges = pnlSummary.charges.total
   const netPnL = pnlSummary.netPnL
 
   // --- Sprint 2 advanced analytics ---

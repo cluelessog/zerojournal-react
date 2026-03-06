@@ -73,7 +73,11 @@ export default function DashboardPage() {
         <TabsContent value="overview">
           <div className="space-y-6 pt-4">
             {/* Metric Cards (2 rows of 4) — not lazy, no Recharts dependency */}
-            <MetricsCards analytics={analytics} pnlSummary={pnlSummary} />
+            <MetricsCards
+              analytics={analytics}
+              pnlSummary={pnlSummary}
+              monthlyBreakdown={analytics.monthlyBreakdown}
+            />
 
             {/* Row 3: P&L Timeline (full width) */}
             <ChartErrorBoundary chartName="P&L Timeline">
