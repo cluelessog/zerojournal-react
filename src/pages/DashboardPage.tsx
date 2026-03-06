@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { MetricsCards } from '@/components/dashboard/MetricsCards'
+import { ExpectancyCards } from '@/components/dashboard/ExpectancyCards'
 import { ChartSkeleton } from '@/components/dashboard/ChartSkeleton'
 import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -23,6 +24,9 @@ const MonthlyVolumeChart = lazy(() =>
 const TradingCalendar = lazy(() =>
   import('@/components/dashboard/TradingCalendar').then((m) => ({ default: m.TradingCalendar }))
 )
+const RollingExpectancyChart = lazy(() =>
+  import('@/components/dashboard/RollingExpectancyChart').then((m) => ({ default: m.RollingExpectancyChart }))
+)
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -33,6 +37,15 @@ export default function DashboardPage() {
   const isLoaded = usePortfolioStore((s) => s.isLoaded)
 
   const [tab, setTab] = useState<'overview' | 'analytics' | 'trades'>('overview')
+
+  const monthTradeCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const t of trades) {
+      const m = t.tradeDate.slice(0, 7)
+      map.set(m, (map.get(m) ?? 0) + 1)
+    }
+    return map
+  }, [trades])
 
   const startTime = useRef(performance.now())
   useEffect(() => {
@@ -207,7 +220,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Row 3: Monthly Performance Table */}
+            {/* Row 3: Expectancy + Risk-Reward Cards */}
+            <ExpectancyCards
+              expectancy={analytics.expectancy}
+              riskReward={analytics.riskReward}
+            />
+
+            {/* Row 4: Monthly Performance Table */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Monthly Performance</h3>
               {analytics.monthlyBreakdown.length === 0 ? (
@@ -232,8 +251,7 @@ export default function DashboardPage() {
                       </thead>
                       <tbody>
                         {analytics.monthlyBreakdown.map((m) => {
-                          const monthTrades = trades.filter((t) => t.tradeDate.slice(0, 7) === m.month)
-                          const sparseMonth = monthTrades.length < 5
+                          const sparseMonth = (monthTradeCounts.get(m.month) ?? 0) < 5
                           return (
                           <tr key={m.month} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800/50">
                             <td className="px-4 py-2 font-medium">{m.month}</td>
@@ -271,6 +289,13 @@ export default function DashboardPage() {
                 </>
               )}
             </div>
+
+            {/* Row 4: Rolling 20-Trade Expectancy Chart */}
+            <ChartErrorBoundary chartName="Rolling Expectancy">
+              <Suspense fallback={<ChartSkeleton height={280} />}>
+                <RollingExpectancyChart data={analytics.rollingExpectancy} />
+              </Suspense>
+            </ChartErrorBoundary>
           </div>
         </TabsContent>
 

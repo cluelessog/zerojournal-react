@@ -56,42 +56,41 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     const orderGroups = groupOrders(tradebookResult.trades)
     const now = new Date().toISOString()
 
-    // Build a partial snapshot for analytics computation
+    const trades = tradebookResult.trades
+    const { symbolPnL, pnlSummary, dpCharges } = pnlResult
+
+    const analytics = computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups })
+    const timeline = buildTimeline(trades, symbolPnL, 'daily')
+
     const snapshot: PortfolioSnapshot = {
       version: 1,
       importedAt: now,
-      trades: tradebookResult.trades,
+      trades,
       orderGroups,
-      symbolPnL: pnlResult.symbolPnL,
-      pnlSummary: pnlResult.pnlSummary,
-      analytics: null as unknown as TradeAnalytics, // will be set below
-      timeline: [],
-      dpCharges: pnlResult.dpCharges,
+      symbolPnL,
+      pnlSummary,
+      analytics,
+      timeline,
+      dpCharges,
     }
-
-    const analytics = computeAnalytics(snapshot)
-    const timeline = buildTimeline(tradebookResult.trades, pnlResult.symbolPnL, 'daily')
-
-    snapshot.analytics = analytics
-    snapshot.timeline = timeline
 
     const metadata: ImportMetadata = {
       tradebookFileName: null,
       pnlFileName: null,
-      tradebookRowCount: tradebookResult.trades.length,
-      pnlSymbolCount: pnlResult.symbolPnL.length,
+      tradebookRowCount: trades.length,
+      pnlSymbolCount: symbolPnL.length,
       importedAt: now,
       warnings: [...tradebookResult.warnings, ...pnlResult.warnings],
     }
 
     set({
-      trades: snapshot.trades,
-      orderGroups: snapshot.orderGroups,
-      symbolPnL: snapshot.symbolPnL,
-      pnlSummary: snapshot.pnlSummary,
-      dpCharges: snapshot.dpCharges,
-      analytics: snapshot.analytics,
-      timeline: snapshot.timeline,
+      trades,
+      orderGroups,
+      symbolPnL,
+      pnlSummary,
+      dpCharges,
+      analytics,
+      timeline,
       isLoaded: true,
       importMetadata: metadata,
     })
@@ -106,7 +105,12 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
         return
       }
       // Recompute analytics to ensure compatibility with any type changes (e.g., new MonthlyMetric.maxDrawdown field)
-      const currentAnalytics = computeAnalytics(snapshot)
+      const currentAnalytics = computeAnalytics({
+        trades: snapshot.trades,
+        symbolPnL: snapshot.symbolPnL,
+        pnlSummary: snapshot.pnlSummary,
+        orderGroups: snapshot.orderGroups,
+      })
       set({
         trades: snapshot.trades,
         orderGroups: snapshot.orderGroups,
@@ -131,8 +135,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   },
 
   clearData: async () => {
-    set(initialState)
     await deleteAll()
+    set(initialState)
   },
 
   resetData: () => {

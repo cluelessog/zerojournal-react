@@ -26,6 +26,8 @@ export interface SymbolPnL {
   unrealizedPnL: number
   openQuantity: number
   previousClosingPrice: number
+  segment?: string
+  series?: string
 }
 
 export interface ChargesBreakdown {
@@ -106,6 +108,53 @@ export interface MonthlyMetric {
   maxDrawdown: number // percentage, <= 0 (peak-to-trough within the month)
 }
 
+export interface FIFOMatch {
+  symbol: string
+  buyDate: string       // YYYY-MM-DD
+  sellDate: string      // YYYY-MM-DD
+  quantity: number
+  buyPrice: number
+  sellPrice: number
+  pnl: number           // (sellPrice - buyPrice) * quantity
+  holdingDays: number   // 0 = intraday, > 0 = swing
+}
+
+export interface ExpectancyBreakdown {
+  expectancy: number    // INR per trade = (winRate * avgWin) + ((1 - winRate) * avgLoss)
+  avgWin: number
+  avgLoss: number       // negative value
+  winCount: number
+  lossCount: number
+  winRate: number       // 0-1 fraction
+}
+
+export interface ExpectancyMetric {
+  overall: ExpectancyBreakdown
+  intraday: ExpectancyBreakdown
+  swing: ExpectancyBreakdown
+}
+
+export interface RiskRewardBreakdown {
+  ratio: number         // avgWin / |avgLoss|, 0 if no losses
+  avgWin: number
+  avgLoss: number       // negative value
+  winCount: number
+  lossCount: number
+}
+
+export interface RiskRewardMetric {
+  overall: RiskRewardBreakdown
+  intraday: RiskRewardBreakdown
+  swing: RiskRewardBreakdown
+}
+
+export interface RollingExpectancyPoint {
+  tradeNumber: number   // 1-based index of the last trade in the window
+  overall: number       // rolling expectancy (INR/trade) across all matches in window
+  intraday: number      // rolling expectancy for intraday matches only
+  swing: number         // rolling expectancy for swing matches only
+}
+
 export interface TradeAnalytics {
   totalTrades: number
   totalSymbols: number
@@ -131,6 +180,10 @@ export interface TradeAnalytics {
   minDrawup: DrawdownMetric
   streaks: StreakMetric
   monthlyBreakdown: MonthlyMetric[]
+  fifoMatches: FIFOMatch[]
+  expectancy: ExpectancyMetric
+  riskReward: RiskRewardMetric
+  rollingExpectancy: RollingExpectancyPoint[]
 }
 
 export interface CrossReferenceData {

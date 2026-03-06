@@ -1,4 +1,8 @@
-import type { PortfolioSnapshot, RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL } from '@/lib/types'
+import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint } from '@/lib/types'
+import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
+
+/** Number of trading days per year used for Sharpe Ratio annualization. */
+const TRADING_DAYS_PER_YEAR = 252
 
 // ─── US-008: Sharpe Ratio ─────────────────────────────────────────────────────
 
@@ -72,8 +76,8 @@ export function calculateSharpeRatio(
 
   if (stdDev === 0) return 0
 
-  const dailyRfr = riskFreeRate / 252
-  const annualizationFactor = Math.sqrt(252)
+  const dailyRfr = riskFreeRate / TRADING_DAYS_PER_YEAR
+  const annualizationFactor = Math.sqrt(TRADING_DAYS_PER_YEAR)
   return ((mean - dailyRfr) / stdDev) * annualizationFactor
 }
 
@@ -190,12 +194,13 @@ function computeHWMDrawdown(
 export function calculateMaxDrawdown(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
+  _closeDate?: Map<string, string>,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Build symbol -> close date map
-  const closeDate = buildSymbolCloseDate(trades)
+  // Use pre-computed close date map if provided, otherwise build it
+  const closeDate = _closeDate ?? buildSymbolCloseDate(trades)
 
   // Filter to closed positions and build aggregated P&L by close date
   const dateMap = new Map<string, number>()
@@ -235,12 +240,13 @@ export function calculateMaxDrawdown(
 export function calculateMinDrawup(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
+  _closeDate?: Map<string, string>,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Build symbol -> close date map
-  const closeDate = buildSymbolCloseDate(trades)
+  // Use pre-computed close date map if provided, otherwise build it
+  const closeDate = _closeDate ?? buildSymbolCloseDate(trades)
 
   // Filter to closed positions and build aggregated P&L by close date
   const dateMap = new Map<string, number>()
@@ -293,35 +299,42 @@ export function calculateMinDrawup(
 // ─── US-010: Win/Loss Streaks ─────────────────────────────────────────────────
 
 /**
- * Calculate win/loss streak metrics from a list of raw trades.
+ * Calculate win/loss streak metrics using SymbolPnL as the authoritative P&L source.
  *
- * Each trade's P&L is computed as:
- *   sell: price * quantity (inflow)
- *   buy:  -(price * quantity) (outflow)
- * Trades are sorted by orderExecutionTime then tradeDate.
- * Win = P&L > 0, Loss = P&L <= 0.
+ * Each closed position's realizedPnL is attributed to its close date (last sell date).
+ * Multiple positions closing on the same date are summed.
+ * Day with summed realizedPnL > 0 = win, <= 0 = loss.
  *
  * Tracks:
- * - longestWinStreak: maximum consecutive wins
- * - longestLossStreak: maximum consecutive losses
- * - currentStreak: type and count from the most recent trade backward
+ * - longestWinStreak: maximum consecutive win days
+ * - longestLossStreak: maximum consecutive loss days
+ * - currentStreak: type and count from the most recent close date backward
  */
-export function calculateStreaks(trades: RawTrade[]): StreakMetric {
+export function calculateStreaks(
+  symbolPnL: SymbolPnL[],
+  trades: RawTrade[],
+  closeDateMap?: Map<string, string>,
+): StreakMetric {
   const empty: StreakMetric = {
     longestWinStreak: 0,
     longestLossStreak: 0,
     currentStreak: { type: 'win', count: 0 },
   }
-  if (trades.length === 0) return empty
+  if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Group trades by date: net P&L per day (sells positive, buys negative)
+  // Use pre-computed close date map if provided, otherwise build it
+  const closeDate = closeDateMap ?? buildSymbolCloseDate(trades)
+
+  // Aggregate realizedPnL by close date (closed positions only)
   const dailyMap = new Map<string, number>()
-  for (const t of trades) {
-    const pnl = t.tradeType === 'sell'
-      ? t.price * t.quantity
-      : -(t.price * t.quantity)
-    dailyMap.set(t.tradeDate, (dailyMap.get(t.tradeDate) ?? 0) + pnl)
+  for (const s of symbolPnL) {
+    if (s.openQuantity !== 0) continue // skip open positions
+    const date = closeDate.get(s.symbol)
+    if (!date) continue
+    dailyMap.set(date, (dailyMap.get(date) ?? 0) + s.realizedPnL)
   }
+
+  if (dailyMap.size === 0) return empty
 
   // Sort dates and classify each day as win or loss
   const sortedDates = Array.from(dailyMap.keys()).sort()
@@ -392,6 +405,7 @@ export function calculateMonthlyBreakdown(
   pnlSummary: PnLSummary,
   _charges: ChargesBreakdown,
   symbolPnL: SymbolPnL[] = [],
+  _precomputedCloseDate?: Map<string, string>,
 ): MonthlyMetric[] {
   if (trades.length === 0) return []
 
@@ -470,8 +484,8 @@ export function calculateMonthlyBreakdown(
 
   const sortedMonths = Array.from(monthTradeMap.keys()).sort()
 
-  // Build symbol -> close date map once, reused for all months
-  const symbolCloseDate = buildSymbolCloseDate(trades)
+  // Use pre-computed close date map if provided, otherwise build it once (C3 fix)
+  const symbolCloseDate = _precomputedCloseDate ?? buildSymbolCloseDate(trades)
 
   return sortedMonths.map((month) => {
     const monthTrades = monthTradeMap.get(month)!
@@ -528,17 +542,115 @@ export function calculateMonthlyBreakdown(
   })
 }
 
-// ─── Legacy analytics (portfolio snapshot based) ─────────────────────────────
+// ─── Expectancy ───────────────────────────────────────────────────────────────
+
+function buildExpectancyBreakdown(matches: FIFOMatch[]): ExpectancyBreakdown {
+  const wins = matches.filter((m) => m.pnl > 0)
+  const losses = matches.filter((m) => m.pnl < 0)
+  const winCount = wins.length
+  const lossCount = losses.length
+  const total = winCount + lossCount
+  const winRate = total > 0 ? winCount / total : 0
+  const avgWin = winCount > 0 ? wins.reduce((s, m) => s + m.pnl, 0) / winCount : 0
+  const avgLoss = lossCount > 0 ? losses.reduce((s, m) => s + m.pnl, 0) / lossCount : 0
+  const expectancy = winRate * avgWin + (1 - winRate) * avgLoss
+  return { expectancy, avgWin, avgLoss, winCount, lossCount, winRate }
+}
 
 /**
- * Compute portfolio-level analytics from a full snapshot.
+ * Calculate expectancy (INR per trade) split by overall, intraday, and swing.
+ * Intraday = holdingDays === 0; Swing = holdingDays > 0.
+ * Expectancy = (winRate * avgWin) + ((1 - winRate) * avgLoss)
+ */
+export function calculateExpectancy(matches: FIFOMatch[]): ExpectancyMetric {
+  const intraday = matches.filter((m) => m.holdingDays === 0)
+  const swing = matches.filter((m) => m.holdingDays > 0)
+  return {
+    overall: buildExpectancyBreakdown(matches),
+    intraday: buildExpectancyBreakdown(intraday),
+    swing: buildExpectancyBreakdown(swing),
+  }
+}
+
+// ─── Risk-Reward ──────────────────────────────────────────────────────────────
+
+function buildRiskRewardBreakdown(matches: FIFOMatch[]): RiskRewardBreakdown {
+  const wins = matches.filter((m) => m.pnl > 0)
+  const losses = matches.filter((m) => m.pnl < 0)
+  const winCount = wins.length
+  const lossCount = losses.length
+  const avgWin = winCount > 0 ? wins.reduce((s, m) => s + m.pnl, 0) / winCount : 0
+  const avgLoss = lossCount > 0 ? losses.reduce((s, m) => s + m.pnl, 0) / lossCount : 0
+  // ratio = avgWin / |avgLoss|; 0 if no losses
+  const ratio = lossCount > 0 && avgLoss !== 0 ? avgWin / Math.abs(avgLoss) : 0
+  return { ratio, avgWin, avgLoss, winCount, lossCount }
+}
+
+/**
+ * Calculate risk-reward ratio (avgWin / |avgLoss|) split by overall, intraday, swing.
+ * Returns 0 for any segment with no losses.
+ */
+export function calculateRiskReward(matches: FIFOMatch[]): RiskRewardMetric {
+  const intraday = matches.filter((m) => m.holdingDays === 0)
+  const swing = matches.filter((m) => m.holdingDays > 0)
+  return {
+    overall: buildRiskRewardBreakdown(matches),
+    intraday: buildRiskRewardBreakdown(intraday),
+    swing: buildRiskRewardBreakdown(swing),
+  }
+}
+
+// ─── Rolling Expectancy ───────────────────────────────────────────────────────
+
+/**
+ * Calculate rolling N-trade expectancy from FIFO matches.
+ *
+ * For each position i >= window-1, compute expectancy over matches[i-window+1..i].
+ * Returns empty array if fewer than `window` matches.
+ *
+ * Each point: { tradeNumber, overall, intraday, swing }
+ * - overall: expectancy across all matches in window
+ * - intraday: expectancy across intraday-only matches in window (NaN-safe: 0 if none)
+ * - swing: expectancy across swing-only matches in window (NaN-safe: 0 if none)
+ */
+export function calculateRollingExpectancy(
+  matches: FIFOMatch[],
+  window = 20,
+): RollingExpectancyPoint[] {
+  if (matches.length < window) return []
+
+  const points: RollingExpectancyPoint[] = []
+
+  for (let i = window - 1; i < matches.length; i++) {
+    const slice = matches.slice(i - window + 1, i + 1)
+    const overall = buildExpectancyBreakdown(slice).expectancy
+    const intradaySlice = slice.filter((m) => m.holdingDays === 0)
+    const swingSlice = slice.filter((m) => m.holdingDays > 0)
+    const intraday = intradaySlice.length > 0 ? buildExpectancyBreakdown(intradaySlice).expectancy : 0
+    const swing = swingSlice.length > 0 ? buildExpectancyBreakdown(swingSlice).expectancy : 0
+    points.push({ tradeNumber: i + 1, overall, intraday, swing })
+  }
+
+  return points
+}
+
+// ─── Analytics computation ────────────────────────────────────────────────────
+
+export interface AnalyticsInput {
+  trades: RawTrade[]
+  symbolPnL: SymbolPnL[]
+  pnlSummary: PnLSummary
+  orderGroups: OrderGroup[]
+}
+
+/**
+ * Compute portfolio-level analytics from raw inputs.
  *
  * Uses symbolPnL (from PnL file) as the authoritative source for
  * win/loss classification, best/worst trades, and realized P&L.
  * Uses trades[] for trading-day count and trade totals.
  */
-export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
-  const { trades, symbolPnL, pnlSummary, orderGroups } = snapshot
+export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }: AnalyticsInput): TradeAnalytics {
 
   // --- Trade counts ---
   const totalTrades = trades.length
@@ -614,11 +726,19 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
   const netPnL = pnlSummary.netPnL
 
   // --- Sprint 2 advanced analytics ---
+  // Build symbol -> close date map once and share across all callers (C3 fix)
+  const symbolCloseDate = buildSymbolCloseDate(trades)
   const sharpeRatio = calculateSharpeRatio(trades)
-  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades)
-  const minDrawup = calculateMinDrawup(symbolPnL, trades)
-  const streaks = calculateStreaks(trades)
-  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL)
+  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, symbolCloseDate)
+  const minDrawup = calculateMinDrawup(symbolPnL, trades, symbolCloseDate)
+  const streaks = calculateStreaks(symbolPnL, trades, symbolCloseDate)
+  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL, symbolCloseDate)
+
+  // --- Sprint 3 analytics ---
+  const fifoMatches = matchTradesWithPnL(trades)
+  const expectancy = calculateExpectancy(fifoMatches)
+  const riskReward = calculateRiskReward(fifoMatches)
+  const rollingExpectancy = calculateRollingExpectancy(fifoMatches)
 
   return {
     totalTrades,
@@ -645,5 +765,9 @@ export function computeAnalytics(snapshot: PortfolioSnapshot): TradeAnalytics {
     minDrawup,
     streaks,
     monthlyBreakdown,
+    fifoMatches,
+    expectancy,
+    riskReward,
+    rollingExpectancy,
   }
 }

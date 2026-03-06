@@ -15,23 +15,22 @@ interface ZeroJournalDB {
   }
 }
 
-let dbInstance: IDBPDatabase<ZeroJournalDB> | null = null
+let dbPromise: Promise<IDBPDatabase<ZeroJournalDB>> | null = null
 
-export async function getDB(): Promise<IDBPDatabase<ZeroJournalDB>> {
-  if (dbInstance) return dbInstance
-
-  dbInstance = await idbOpenDB<ZeroJournalDB>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains('portfolio')) {
-        db.createObjectStore('portfolio')
-      }
-      if (!db.objectStoreNames.contains('metadata')) {
-        db.createObjectStore('metadata')
-      }
-    },
-  })
-
-  return dbInstance
+export function getDB(): Promise<IDBPDatabase<ZeroJournalDB>> {
+  if (!dbPromise) {
+    dbPromise = idbOpenDB<ZeroJournalDB>(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains('portfolio')) {
+          db.createObjectStore('portfolio')
+        }
+        if (!db.objectStoreNames.contains('metadata')) {
+          db.createObjectStore('metadata')
+        }
+      },
+    })
+  }
+  return dbPromise
 }
 
 export async function savePortfolio(snapshot: PortfolioSnapshot): Promise<void> {

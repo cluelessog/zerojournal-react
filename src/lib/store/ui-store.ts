@@ -17,6 +17,9 @@ interface UIStore {
   tradeTypeFilter: TradeTypeFilter
   groupBy: GroupBy
 
+  // Chart state
+  initialCapital: number | null  // null = show cumulative P&L; number = show portfolio value
+
   // Actions
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
@@ -30,6 +33,9 @@ interface UIStore {
   setTradeType: (type: TradeTypeFilter) => void
   setGroupBy: (groupBy: GroupBy) => void
   resetTradeFilters: () => void
+
+  // Chart actions
+  setInitialCapital: (capital: number | null) => void
 }
 
 export const useUIStore = create<UIStore>((set) => ({
@@ -42,6 +48,9 @@ export const useUIStore = create<UIStore>((set) => ({
   dateRange: { from: '', to: '' },
   tradeTypeFilter: 'all',
   groupBy: 'none',
+
+  // Chart state
+  initialCapital: null,
 
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
@@ -62,4 +71,7 @@ export const useUIStore = create<UIStore>((set) => ({
       tradeTypeFilter: 'all',
       groupBy: 'none',
     }),
+
+  // Chart actions
+  setInitialCapital: (capital) => set({ initialCapital: capital }),
 }))

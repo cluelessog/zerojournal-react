@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { computeAnalytics } from '@/lib/engine/analytics'
-import type { PortfolioSnapshot, SymbolPnL, RawTrade, PnLSummary } from '@/lib/types'
+import type { SymbolPnL, RawTrade, PnLSummary } from '@/lib/types'
 
 /**
  * Ground truth values from the design doc (section 8.2):
@@ -157,15 +157,10 @@ function buildTestSnapshot(): PortfolioSnapshot {
   }
 
   return {
-    version: 1,
-    importedAt: new Date().toISOString(),
     trades,
     orderGroups: [],
     symbolPnL,
     pnlSummary,
-    analytics: null as unknown as any,
-    timeline: [],
-    dpCharges: [],
   }
 }
 
