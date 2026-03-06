@@ -1,4 +1,4 @@
-import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint } from '@/lib/types'
+import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
 import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
 
 /** Number of trading days per year used for Sharpe Ratio annualization. */
@@ -634,6 +634,113 @@ export function calculateRollingExpectancy(
   return points
 }
 
+// ─── Trading Style Classification ─────────────────────────────────────────────
+
+const MIN_TRADES_FOR_RECOMMENDATION = 3
+
+function buildStyleMetrics(matches: FIFOMatch[]): TradingStyleMetrics {
+  if (matches.length === 0) {
+    return { count: 0, winRate: 0, avgPnL: 0, totalPnL: 0 }
+  }
+  const wins = matches.filter((m) => m.pnl > 0).length
+  const totalPnL = matches.reduce((s, m) => s + m.pnl, 0)
+  return {
+    count: matches.length,
+    winRate: (wins / matches.length) * 100,
+    avgPnL: totalPnL / matches.length,
+    totalPnL,
+  }
+}
+
+/**
+ * Classify FIFO matches into trading styles based on holding days.
+ * Categories: Intraday (0 days), BTST (1 day), Velocity (2-4 days), Swing (>4 days)
+ *
+ * Best/worst style determined by avgPnL, requiring MIN_TRADES_FOR_RECOMMENDATION (3)
+ * trades per category. Need at least 2 qualifying styles to pick best/worst.
+ *
+ * Reference: Python calculate_holding_sentiment() at metrics_calculator.py:853-980
+ */
+export function classifyTradingStyles(matches: FIFOMatch[]): TradingStyleResult {
+  const intraday = matches.filter((m) => m.holdingDays === 0)
+  const btst = matches.filter((m) => m.holdingDays === 1)
+  const velocity = matches.filter((m) => m.holdingDays >= 2 && m.holdingDays <= 4)
+  const swing = matches.filter((m) => m.holdingDays > 4)
+
+  const result: TradingStyleResult = {
+    intraday: buildStyleMetrics(intraday),
+    btst: buildStyleMetrics(btst),
+    velocity: buildStyleMetrics(velocity),
+    swing: buildStyleMetrics(swing),
+    bestStyle: null,
+    worstStyle: null,
+  }
+
+  // Determine best/worst by avgPnL among styles with enough trades
+  const candidates: Array<[string, TradingStyleMetrics]> = []
+  if (result.intraday.count >= MIN_TRADES_FOR_RECOMMENDATION) candidates.push(['Intraday', result.intraday])
+  if (result.btst.count >= MIN_TRADES_FOR_RECOMMENDATION) candidates.push(['BTST', result.btst])
+  if (result.velocity.count >= MIN_TRADES_FOR_RECOMMENDATION) candidates.push(['Velocity', result.velocity])
+  if (result.swing.count >= MIN_TRADES_FOR_RECOMMENDATION) candidates.push(['Swing', result.swing])
+
+  if (candidates.length >= 2) {
+    candidates.sort((a, b) => b[1].avgPnL - a[1].avgPnL)
+    result.bestStyle = candidates[0][0]
+    result.worstStyle = candidates[candidates.length - 1][0]
+  }
+
+  return result
+}
+
+// ─── Monthly Expectancy ───────────────────────────────────────────────────────
+
+/**
+ * Calculate per-month expectancy from FIFO matches, grouped by sell month.
+ * Returns a Map<YYYY-MM, { overallExpectancy, intradayExpectancy, swingExpectancy }>.
+ *
+ * Expectancy = (winRate * avgWin) + ((1 - winRate) * avgLoss)
+ * Same formula as buildExpectancyBreakdown but per-month.
+ *
+ * Reference: Python calculate_monthly_expectancy() at metrics_calculator.py:1365-1510
+ */
+export function calculateMonthlyExpectancy(
+  matches: FIFOMatch[],
+): Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null }> {
+  const result = new Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null }>()
+
+  if (matches.length === 0) return result
+
+  // Group by sell month (YYYY-MM)
+  const byMonth = new Map<string, FIFOMatch[]>()
+  for (const m of matches) {
+    const month = m.sellDate.slice(0, 7)
+    const bucket = byMonth.get(month)
+    if (bucket) {
+      bucket.push(m)
+    } else {
+      byMonth.set(month, [m])
+    }
+  }
+
+  for (const [month, monthMatches] of byMonth) {
+    const overallExpectancy = buildExpectancyBreakdown(monthMatches).expectancy
+
+    const intradayMatches = monthMatches.filter((m) => m.holdingDays === 0)
+    const swingMatches = monthMatches.filter((m) => m.holdingDays > 0)
+
+    const intradayExpectancy = intradayMatches.length > 0
+      ? buildExpectancyBreakdown(intradayMatches).expectancy
+      : null
+    const swingExpectancy = swingMatches.length > 0
+      ? buildExpectancyBreakdown(swingMatches).expectancy
+      : null
+
+    result.set(month, { overallExpectancy, intradayExpectancy, swingExpectancy })
+  }
+
+  return result
+}
+
 // ─── Analytics computation ────────────────────────────────────────────────────
 
 export interface AnalyticsInput {
@@ -740,6 +847,20 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
   const riskReward = calculateRiskReward(fifoMatches)
   const rollingExpectancy = calculateRollingExpectancy(fifoMatches)
 
+  // --- Sprint 4 analytics ---
+  const tradingStyles = classifyTradingStyles(fifoMatches)
+
+  // Merge monthly expectancy into monthlyBreakdown
+  const monthlyExpectancyMap = calculateMonthlyExpectancy(fifoMatches)
+  for (const m of monthlyBreakdown) {
+    const exp = monthlyExpectancyMap.get(m.month)
+    if (exp) {
+      m.overallExpectancy = exp.overallExpectancy
+      m.intradayExpectancy = exp.intradayExpectancy ?? undefined
+      m.swingExpectancy = exp.swingExpectancy ?? undefined
+    }
+  }
+
   return {
     totalTrades,
     totalSymbols,
@@ -769,5 +890,6 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
     expectancy,
     riskReward,
     rollingExpectancy,
+    tradingStyles,
   }
 }

@@ -106,6 +106,9 @@ export interface MonthlyMetric {
   netPnL: number
   winRate: number     // 0-100
   maxDrawdown: number // percentage, <= 0 (peak-to-trough within the month)
+  overallExpectancy?: number    // INR per trade for this month
+  intradayExpectancy?: number   // INR per trade for intraday matches
+  swingExpectancy?: number      // INR per trade for swing matches
 }
 
 export interface FIFOMatch {
@@ -155,6 +158,22 @@ export interface RollingExpectancyPoint {
   swing: number         // rolling expectancy for swing matches only
 }
 
+export interface TradingStyleMetrics {
+  count: number
+  winRate: number       // 0-100 percentage
+  avgPnL: number        // INR per trade
+  totalPnL: number      // total INR
+}
+
+export interface TradingStyleResult {
+  intraday: TradingStyleMetrics
+  btst: TradingStyleMetrics
+  velocity: TradingStyleMetrics
+  swing: TradingStyleMetrics
+  bestStyle: string | null    // style name, null if < 2 styles meet threshold
+  worstStyle: string | null
+}
+
 export interface TradeAnalytics {
   totalTrades: number
   totalSymbols: number
@@ -184,6 +203,7 @@ export interface TradeAnalytics {
   expectancy: ExpectancyMetric
   riskReward: RiskRewardMetric
   rollingExpectancy: RollingExpectancyPoint[]
+  tradingStyles: TradingStyleResult
 }
 
 export interface CrossReferenceData {

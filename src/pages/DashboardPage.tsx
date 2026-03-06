@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { MetricsCards } from '@/components/dashboard/MetricsCards'
 import { ExpectancyCards } from '@/components/dashboard/ExpectancyCards'
+import { TradingStyleSection } from '@/components/dashboard/TradingStyleSection'
 import { ChartSkeleton } from '@/components/dashboard/ChartSkeleton'
 import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -226,7 +227,10 @@ export default function DashboardPage() {
               riskReward={analytics.riskReward}
             />
 
-            {/* Row 4: Monthly Performance Table */}
+            {/* Row 4: Trading Style Classification */}
+            <TradingStyleSection tradingStyles={analytics.tradingStyles} />
+
+            {/* Row 5: Monthly Performance Table */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Monthly Performance</h3>
               {analytics.monthlyBreakdown.length === 0 ? (
@@ -247,6 +251,9 @@ export default function DashboardPage() {
                             className="px-4 py-2 text-right font-medium"
                             title="Values shown in INR when no capital is set"
                           >Max DD</th>
+                          <th className="px-4 py-2 text-right font-medium" title="Expectancy (INR/trade) for all trades closing this month">Exp.</th>
+                          <th className="px-4 py-2 text-right font-medium" title="Intraday expectancy (INR/trade)">Intra.</th>
+                          <th className="px-4 py-2 text-right font-medium" title="Swing expectancy (INR/trade)">Swing</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -274,6 +281,15 @@ export default function DashboardPage() {
                                 ? `Rs. ${Math.abs(m.maxDrawdown).toLocaleString('en-IN')}`
                                 : `${m.maxDrawdown.toFixed(1)}%`}
                               {sparseMonth ? '*' : ''}
+                            </td>
+                            <td className={`px-4 py-2 text-right ${m.overallExpectancy != null ? (m.overallExpectancy >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}`}>
+                              {m.overallExpectancy != null ? m.overallExpectancy.toFixed(2) : '—'}
+                            </td>
+                            <td className={`px-4 py-2 text-right ${m.intradayExpectancy != null ? (m.intradayExpectancy >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}`}>
+                              {m.intradayExpectancy != null ? m.intradayExpectancy.toFixed(2) : '—'}
+                            </td>
+                            <td className={`px-4 py-2 text-right ${m.swingExpectancy != null ? (m.swingExpectancy >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}`}>
+                              {m.swingExpectancy != null ? m.swingExpectancy.toFixed(2) : '—'}
                             </td>
                           </tr>
                           )
