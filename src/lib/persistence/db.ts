@@ -2,7 +2,7 @@ import { openDB as idbOpenDB, type IDBPDatabase } from 'idb'
 import type { PortfolioSnapshot, ImportMetadata } from '@/lib/types'
 
 const DB_NAME = 'zerojournal'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 interface ZeroJournalDB {
   portfolio: {
@@ -40,6 +40,15 @@ export async function getDB(): Promise<IDBPDatabase<ZeroJournalDB>> {
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings')
         }
+      }
+      // v3: invalidate cache due to parser normalization fix (charges.total semantics change)
+      // Old data had charges.total that included DP charges; new parser excludes DP.
+      // Users must re-import to get correct data.
+      if (oldVersion < 3) {
+        db.deleteObjectStore('portfolio')
+        db.deleteObjectStore('metadata')
+        db.createObjectStore('portfolio')
+        db.createObjectStore('metadata')
       }
     },
   })
