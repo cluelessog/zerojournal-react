@@ -61,11 +61,11 @@ function getPnLColorClass(value: number): string {
 }
 
 export function MetricsCards({ analytics, pnlSummary, monthlyBreakdown }: MetricsCardsProps) {
-  // Calculate total charges from monthly breakdown (ensures consistency with Analysis tab)
-  // Falls back to pnlSummary total charges if monthlyBreakdown is unavailable
-  const totalChargesExclDP = monthlyBreakdown && monthlyBreakdown.length > 0
+  // Grand total charges including DP — matches Analysis Tab's "Grand Total (incl. DP)"
+  const tradingCharges = monthlyBreakdown && monthlyBreakdown.length > 0
     ? monthlyBreakdown.reduce((sum, m) => sum + m.charges, 0)
     : pnlSummary.charges.total
+  const totalChargesInclDP = tradingCharges + pnlSummary.charges.dpCharges
 
   return (
     <div className="space-y-4">
@@ -110,7 +110,7 @@ export function MetricsCards({ analytics, pnlSummary, monthlyBreakdown }: Metric
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           label="Total Charges"
-          value={formatCurrency(totalChargesExclDP)}
+          value={formatCurrency(totalChargesInclDP)}
           colorClass="text-red-600 dark:text-red-400"
         />
         <MetricCard
