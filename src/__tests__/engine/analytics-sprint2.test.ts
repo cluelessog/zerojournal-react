@@ -253,7 +253,7 @@ describe('calculateMaxDrawdown', () => {
       makeSymbolPnL('DD1', -200),
     ]
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
     // Monthly drawdown should be negative (absolute INR) instead of 0
     expect(result[0].maxDrawdown).toBeLessThan(0)
@@ -269,7 +269,7 @@ describe('calculateMaxDrawdown', () => {
     ])
     const overallResult = calculateMaxDrawdown(symbolPnL, trades)
     const summary = makePnLSummary()
-    const monthlyResult = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const monthlyResult = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     // All trades are in the same month, so monthly drawdown should equal overall
     expect(monthlyResult).toHaveLength(1)
     expect(monthlyResult[0].maxDrawdown).toBeCloseTo(overallResult.value, 0)
@@ -558,7 +558,7 @@ function makeDrawdownData(
 
 describe('calculateMonthlyBreakdown', () => {
   it('returns empty array for no trades', () => {
-    const result = calculateMonthlyBreakdown([], makePnLSummary(), makePnLSummary().charges)
+    const result = calculateMonthlyBreakdown([], makePnLSummary())
     expect(result).toEqual([])
   })
 
@@ -572,7 +572,7 @@ describe('calculateMonthlyBreakdown', () => {
     const symbolPnL = [1, 2, 3, 4, 5].map((i) => makeSymbolPnL(`S${i}`, 10))
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 50 } })
 
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
     expect(result[0].month).toBe('2025-01')
     expect(result[0].trades).toBe(10)
@@ -592,7 +592,7 @@ describe('calculateMonthlyBreakdown', () => {
     const all = [...janTrades, ...febTrades]
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 100 } })
 
-    const result = calculateMonthlyBreakdown(all, summary, summary.charges)
+    const result = calculateMonthlyBreakdown(all, summary)
 
     expect(result).toHaveLength(2)
     expect(result[0].month).toBe('2025-01')
@@ -609,7 +609,7 @@ describe('calculateMonthlyBreakdown', () => {
     const marTrades = makeTradesFromPnLs([200], '2025-03-10')
     const summary = makePnLSummary()
 
-    const result = calculateMonthlyBreakdown([...janTrades, ...marTrades], summary, summary.charges)
+    const result = calculateMonthlyBreakdown([...janTrades, ...marTrades], summary)
 
     expect(result).toHaveLength(2)
     const months = result.map((r) => r.month)
@@ -629,7 +629,7 @@ describe('calculateMonthlyBreakdown', () => {
       makeSymbolPnL('LOSE', -20), // loser
     ]
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
 
     expect(result).toHaveLength(1)
     // 1 winner out of 2 closed → 50%
@@ -642,7 +642,7 @@ describe('calculateMonthlyBreakdown', () => {
     const febTrades = makeTradesFromPnLs([100, 100, 100, 100], '2025-02-15') // 8 trades
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 1000 } })
 
-    const result = calculateMonthlyBreakdown([...janTrades, ...febTrades], summary, summary.charges)
+    const result = calculateMonthlyBreakdown([...janTrades, ...febTrades], summary)
 
     expect(result[0].charges).toBeCloseTo(200)   // 2/10 * 1000
     expect(result[1].charges).toBeCloseTo(800)   // 8/10 * 1000
@@ -729,7 +729,7 @@ describe('Integration: computeAnalytics with all Sprint 2 metrics', () => {
     const symbolPnL = [makeSymbolPnL('CROSS', 100)]
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
 
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
 
     expect(result).toHaveLength(2)
     const jan = result.find((m) => m.month === '2025-01')!
@@ -955,7 +955,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: -750, closeDateOffset: 2 },
     ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
   })
@@ -968,7 +968,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: 300, closeDateOffset: 2 },
     ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result[0].maxDrawdown).toBe(0)
   })
 
@@ -980,7 +980,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: -400, closeDateOffset: 2 },
     ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result[0].maxDrawdown).toBeLessThan(-50)
   })
 
@@ -990,7 +990,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: 500, closeDateOffset: 0 },
     ], '2025-06-15')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result[0].maxDrawdown).toBe(0)
   })
 
@@ -1006,7 +1006,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: 100, closeDateOffset: 4 },
     ], '2025-06-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
   })
 
@@ -1026,7 +1026,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: -200, closeDateOffset: 4 },
     ], '2025-07-01')
     const summary = makePnLSummary()
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbolPnL)
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     // Should have exactly one month in the result
     expect(result.length).toBe(1)
     // Max drawdown should be -50% (from 800 peak to 400 trough)

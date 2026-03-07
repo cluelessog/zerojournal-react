@@ -63,7 +63,7 @@ Where:
 
 ### Calculation Process
 
-1. Build cumulative P&L series from daily cash flows
+1. Build cumulative P&L series from `SymbolPnL.realizedPnL` distributed across sell dates proportionally by sell quantity (per-trade attribution)
 2. Track the running maximum (high-water mark) as you walk through time
 3. At each point, compute the percentage decline from that peak
 4. Return the worst (most negative) drawdown value
@@ -71,9 +71,9 @@ Where:
 ### Maximum Drawdown per Month
 
 Same algorithm, but applied to each calendar month independently:
-- Extract that month's trades
-- Build cumulative P&L from daily cash flows within the month
-- Apply the high-water-mark algorithm
+- Extract closed positions whose close month is this month
+- Build cumulative P&L from `SymbolPnL.realizedPnL` within the month (per-trade attribution, filtered to month dates)
+- Apply the high-water-mark algorithm with month-start equity (capital + prior months' cumulative P&L) as baseline
 - Return the month's maximum drawdown
 
 ### Edge Cases
@@ -84,8 +84,8 @@ Same algorithm, but applied to each calendar month independently:
 
 ### Data Sources
 
-- **Overall drawdown** (`TradeAnalytics.maxDrawdown`): Uses raw trade cash flows
-- **Monthly drawdown** (`MonthlyMetric.maxDrawdown`): Uses raw trade cash flows (consistent with overall)
+- **Overall drawdown** (`TradeAnalytics.maxDrawdown`): Uses `SymbolPnL.realizedPnL` distributed across sell dates proportionally by sell quantity (per-trade attribution)
+- **Monthly drawdown** (`MonthlyMetric.maxDrawdown`): Same per-trade attribution, filtered to the month's dates, with month-start equity as baseline
 - **Monthly P&L** (`MonthlyMetric.netPnL`): Uses `SymbolPnL.realizedPnL` from the PnL file
 
 Note: These data sources may diverge for multi-day positions (e.g., position opened in Month A, closed in Month B). This is expected and acceptable.
@@ -104,8 +104,9 @@ Win% = (winning trades / total trades) × 100%
 ```
 
 Where:
-- Winning trade = realized P&L >= 0
+- Winning trade = realized P&L > 0
 - Losing trade = realized P&L < 0
+- Breakeven trade = realized P&L === 0 (counted separately)
 
 ## Gross P&L vs Net P&L
 

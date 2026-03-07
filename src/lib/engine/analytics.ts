@@ -1,4 +1,4 @@
-import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
+import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
 import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
 
 /** Number of trading days per year used for Sharpe Ratio annualization. */
@@ -56,13 +56,21 @@ export function calculateSharpeRatio(
     }
   }
 
-  // Compute percentage returns only for days that have invested capital (buy trades).
-  // Skip days where dailyCapital === 0 (sell-only days).
+  // Compute percentage returns for all trading days.
+  // For sell-only days (no buy capital), carry forward the most recent day's capital
+  // so that overnight swing trades (buy day 1, sell day 2) are properly accounted for.
+  const sortedDates = Array.from(dailyPnL.keys()).sort()
   const returns: number[] = []
-  for (const [date, pnl] of dailyPnL) {
-    const capital = dailyCapital.get(date) ?? 0
-    if (capital > 0) {
-      returns.push(pnl / capital)
+  let carryCapital = 0
+  for (const date of sortedDates) {
+    const pnl = dailyPnL.get(date)!
+    const dayCapital = dailyCapital.get(date) ?? 0
+    if (dayCapital > 0) {
+      carryCapital = dayCapital
+    }
+    const effectiveCapital = dayCapital > 0 ? dayCapital : carryCapital
+    if (effectiveCapital > 0) {
+      returns.push(pnl / effectiveCapital)
     }
   }
 
@@ -84,21 +92,56 @@ export function calculateSharpeRatio(
 // ─── US-009: Max Drawdown & Min Drawup ────────────────────────────────────────
 
 /**
- * Build a map: symbol -> last sell date (YYYY-MM-DD).
- * Used to attribute SymbolPnL.realizedPnL to the date the position closed.
- * Mirrors the pattern in timeline.ts (ADR-005: attribute P&L to last sell date).
+ * Build per-trade P&L attributions: distributes each symbol's realizedPnL across
+ * its sell dates proportionally by sell quantity. This prevents multiple round-trips
+ * for the same symbol from collapsing to a single date, preserving equity curve chronology.
+ *
+ * Returns a map: symbol -> Array<{ date, weight }> where weights sum to 1.0.
+ * Consumers multiply symbol.realizedPnL * weight to get date-attributed P&L.
  */
-function buildSymbolCloseDate(trades: RawTrade[]): Map<string, string> {
-  const closeDate = new Map<string, string>()
+function buildTradeAttributions(trades: RawTrade[]): Map<string, Array<{ date: string; weight: number }>> {
+  // Group sell trades by symbol, then by date with total quantity per date
+  const symbolSells = new Map<string, Map<string, number>>()
   for (const t of trades) {
-    if (t.tradeType === 'sell') {
-      const existing = closeDate.get(t.symbol)
-      if (!existing || t.tradeDate > existing) {
-        closeDate.set(t.symbol, t.tradeDate)
-      }
+    if (t.tradeType !== 'sell') continue
+    let dateSells = symbolSells.get(t.symbol)
+    if (!dateSells) {
+      dateSells = new Map()
+      symbolSells.set(t.symbol, dateSells)
+    }
+    dateSells.set(t.tradeDate, (dateSells.get(t.tradeDate) ?? 0) + t.quantity)
+  }
+
+  const result = new Map<string, Array<{ date: string; weight: number }>>()
+  for (const [symbol, dateSells] of symbolSells) {
+    const totalQty = Array.from(dateSells.values()).reduce((s, q) => s + q, 0)
+    if (totalQty === 0) continue
+    const attributions: Array<{ date: string; weight: number }> = []
+    for (const [date, qty] of dateSells) {
+      attributions.push({ date, weight: qty / totalQty })
+    }
+    result.set(symbol, attributions)
+  }
+  return result
+}
+
+/**
+ * Build a date -> P&L map from closed symbol P&L entries using trade attributions.
+ * Each symbol's realizedPnL is distributed across its sell dates proportionally.
+ */
+function buildDatePnLMap(
+  closedSymbols: SymbolPnL[],
+  attributions: Map<string, Array<{ date: string; weight: number }>>,
+): Map<string, number> {
+  const dateMap = new Map<string, number>()
+  for (const s of closedSymbols) {
+    const attrs = attributions.get(s.symbol)
+    if (!attrs) continue
+    for (const { date, weight } of attrs) {
+      dateMap.set(date, (dateMap.get(date) ?? 0) + s.realizedPnL * weight)
     }
   }
-  return closeDate
+  return dateMap
 }
 
 /**
@@ -209,22 +252,14 @@ export function calculateMaxDrawdown(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
   initialCapital?: number | null,
-  _closeDate?: Map<string, string>,
+  _attributions?: Map<string, Array<{ date: string; weight: number }>>,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Use pre-computed close date map if provided, otherwise build it
-  const closeDate = _closeDate ?? buildSymbolCloseDate(trades)
-
-  // Filter to closed positions and build aggregated P&L by close date
-  const dateMap = new Map<string, number>()
-  for (const s of symbolPnL) {
-    if (s.openQuantity !== 0) continue // Skip open positions
-    const closeDateStr = closeDate.get(s.symbol)
-    if (!closeDateStr) continue // No close date found for this symbol
-    dateMap.set(closeDateStr, (dateMap.get(closeDateStr) ?? 0) + s.realizedPnL)
-  }
+  const attributions = _attributions ?? buildTradeAttributions(trades)
+  const closedSymbols = symbolPnL.filter((s) => s.openQuantity === 0)
+  const dateMap = buildDatePnLMap(closedSymbols, attributions)
 
   const sortedDates = Array.from(dateMap.keys()).sort()
   if (sortedDates.length === 0) return empty
@@ -256,22 +291,14 @@ export function calculateMinDrawup(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
   initialCapital?: number | null,
-  _closeDate?: Map<string, string>,
+  _attributions?: Map<string, Array<{ date: string; weight: number }>>,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Use pre-computed close date map if provided, otherwise build it
-  const closeDate = _closeDate ?? buildSymbolCloseDate(trades)
-
-  // Filter to closed positions and build aggregated P&L by close date
-  const dateMap = new Map<string, number>()
-  for (const s of symbolPnL) {
-    if (s.openQuantity !== 0) continue // Skip open positions
-    const closeDateStr = closeDate.get(s.symbol)
-    if (!closeDateStr) continue // No close date found for this symbol
-    dateMap.set(closeDateStr, (dateMap.get(closeDateStr) ?? 0) + s.realizedPnL)
-  }
+  const attributions = _attributions ?? buildTradeAttributions(trades)
+  const closedSymbols = symbolPnL.filter((s) => s.openQuantity === 0)
+  const dateMap = buildDatePnLMap(closedSymbols, attributions)
 
   const sortedDates = Array.from(dateMap.keys()).sort()
   if (sortedDates.length === 0) return empty
@@ -301,8 +328,8 @@ export function calculateMinDrawup(
       trough = equity
       troughDate = point.date
     }
-    // Only compute drawup when we are above the trough (actual recovery)
-    if (trough < (hasCapital ? initialCapital : 0) && equity > trough) {
+    // Compute drawup from any local trough recovery (not just below-capital troughs)
+    if (equity > trough && trough < equity) {
       const drawup = (equity - trough) / Math.abs(trough) * 100
       if (minDrawup === null || drawup < minDrawup) {
         minDrawup = drawup
@@ -336,7 +363,7 @@ export function calculateMinDrawup(
 export function calculateStreaks(
   symbolPnL: SymbolPnL[],
   trades: RawTrade[],
-  closeDateMap?: Map<string, string>,
+  _attributions?: Map<string, Array<{ date: string; weight: number }>>,
 ): StreakMetric {
   const empty: StreakMetric = {
     longestWinStreak: 0,
@@ -345,17 +372,9 @@ export function calculateStreaks(
   }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
-  // Use pre-computed close date map if provided, otherwise build it
-  const closeDate = closeDateMap ?? buildSymbolCloseDate(trades)
-
-  // Aggregate realizedPnL by close date (closed positions only)
-  const dailyMap = new Map<string, number>()
-  for (const s of symbolPnL) {
-    if (s.openQuantity !== 0) continue // skip open positions
-    const date = closeDate.get(s.symbol)
-    if (!date) continue
-    dailyMap.set(date, (dailyMap.get(date) ?? 0) + s.realizedPnL)
-  }
+  const attributions = _attributions ?? buildTradeAttributions(trades)
+  const closedSymbols = symbolPnL.filter((s) => s.openQuantity === 0)
+  const dailyMap = buildDatePnLMap(closedSymbols, attributions)
 
   if (dailyMap.size === 0) return empty
 
@@ -426,10 +445,9 @@ export function calculateStreaks(
 export function calculateMonthlyBreakdown(
   trades: RawTrade[],
   pnlSummary: PnLSummary,
-  _charges: ChargesBreakdown,
   symbolPnL: SymbolPnL[] = [],
   initialCapital?: number | null,
-  _precomputedCloseDate?: Map<string, string>,
+  _precomputedAttributions?: Map<string, Array<{ date: string; weight: number }>>,
 ): MonthlyMetric[] {
   if (trades.length === 0) return []
 
@@ -509,10 +527,14 @@ export function calculateMonthlyBreakdown(
 
   const sortedMonths = Array.from(monthTradeMap.keys()).sort()
 
-  // Use pre-computed close date map if provided, otherwise build it once (C3 fix)
-  const symbolCloseDate = _precomputedCloseDate ?? buildSymbolCloseDate(trades)
+  const attributions = _precomputedAttributions ?? buildTradeAttributions(trades)
 
-  return sortedMonths.map((month) => {
+  // Track cumulative P&L across months so each month's drawdown uses
+  // month-start equity (capital + prior months' P&L) as baseline, not global capital.
+  let priorCumulativePnL = 0
+  const results: MonthlyMetric[] = []
+
+  for (const month of sortedMonths) {
     const monthTrades = monthTradeMap.get(month)!
     const tradeCount = monthTrades.length
 
@@ -536,12 +558,13 @@ export function calculateMonthlyBreakdown(
 
     // Per-month max drawdown using the high-water-mark algorithm.
     // Data source: SymbolPnL.realizedPnL for positions closing within this month,
-    // ordered by close date. This captures the intra-month equity curve shape.
+    // distributed across sell dates via trade attributions for chronological accuracy.
+    const rawMonthDateMap = buildDatePnLMap(closedSymbols, attributions)
+    // Filter to only dates within this month (attributions may distribute across months)
     const monthDateMap = new Map<string, number>()
-    for (const s of closedSymbols) {
-      const closeDate = symbolCloseDate.get(s.symbol)
-      if (closeDate) {
-        monthDateMap.set(closeDate, (monthDateMap.get(closeDate) ?? 0) + s.realizedPnL)
+    for (const [date, pnl] of rawMonthDateMap) {
+      if (date.startsWith(month)) {
+        monthDateMap.set(date, pnl)
       }
     }
     // Build cumulative series for the month and use shared HWM helper
@@ -552,11 +575,20 @@ export function calculateMonthlyBreakdown(
       monthRunning += monthDateMap.get(date)!
       monthCumulative.push({ date, value: monthRunning })
     }
-    const monthDDResult = computeHWMDrawdown(monthCumulative, initialCapital)
+    // Month-start equity = capital + prior months' cumulative P&L.
+    // This ensures month 2's drawdown is relative to month-1-end equity,
+    // not the original global capital.
+    const monthStartEquity = initialCapital != null && initialCapital > 0
+      ? initialCapital + priorCumulativePnL
+      : null
+    const monthDDResult = computeHWMDrawdown(monthCumulative, monthStartEquity)
     const monthMaxDrawdown = monthDDResult.value
     const monthMaxDrawdownMode = monthDDResult.mode
 
-    return {
+    // Accumulate this month's gross P&L for next month's baseline
+    priorCumulativePnL += grossPnL
+
+    results.push({
       month,
       trades: tradeCount,
       grossPnL,
@@ -565,8 +597,10 @@ export function calculateMonthlyBreakdown(
       winRate,
       maxDrawdown: monthMaxDrawdown,
       maxDrawdownMode: monthMaxDrawdownMode,
-    }
-  })
+    })
+  }
+
+  return results
 }
 
 // ─── Expectancy ───────────────────────────────────────────────────────────────
@@ -860,13 +894,13 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
   const netPnL = pnlSummary.netPnL
 
   // --- Sprint 2 advanced analytics ---
-  // Build symbol -> close date map once and share across all callers (C3 fix)
-  const symbolCloseDate = buildSymbolCloseDate(trades)
+  // Build trade attributions: distributes P&L across sell dates (not just last sell date)
+  const tradeAttributions = buildTradeAttributions(trades)
   const sharpeRatio = calculateSharpeRatio(trades)
-  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital, symbolCloseDate)
-  const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital, symbolCloseDate)
-  const streaks = calculateStreaks(symbolPnL, trades, symbolCloseDate)
-  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, pnlSummary.charges, symbolPnL, initialCapital, symbolCloseDate)
+  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital, tradeAttributions)
+  const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital, tradeAttributions)
+  const streaks = calculateStreaks(symbolPnL, trades, tradeAttributions)
+  const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, symbolPnL, initialCapital, tradeAttributions)
 
   // --- Sprint 3 analytics ---
   const fifoMatches = matchTradesWithPnL(trades)

@@ -15,7 +15,7 @@ function pct(pnl: number, cost: number) {
 }
 
 export function OpenPositions({ symbolPnL }: OpenPositionsProps) {
-  const openPositions = symbolPnL.filter((s) => s.openQuantity > 0)
+  const openPositions = symbolPnL.filter((s) => s.openQuantity !== 0)
 
   if (openPositions.length === 0) {
     return (
@@ -86,9 +86,18 @@ export function OpenPositions({ symbolPnL }: OpenPositionsProps) {
             <td className="px-3 py-2 font-bold text-gray-900 dark:text-gray-100" colSpan={4}>
               Total ({openPositions.length} position{openPositions.length !== 1 ? 's' : ''})
             </td>
-            <td className={cn('px-3 py-2 text-right font-bold whitespace-nowrap', openPositions.reduce((s, p) => s + p.unrealizedPnL, 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+            <td className={cn('px-3 py-2 text-right font-bold whitespace-nowrap', (() => {
+                const total = openPositions.reduce((s, p) => {
+                  const avg = p.quantity > 0 ? p.buyValue / p.quantity : 0
+                  return s + (p.openQuantity * p.previousClosingPrice - p.openQuantity * avg)
+                }, 0)
+                return total >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+              })())}>
               {(() => {
-                const total = openPositions.reduce((s, p) => s + p.unrealizedPnL, 0)
+                const total = openPositions.reduce((s, p) => {
+                  const avg = p.quantity > 0 ? p.buyValue / p.quantity : 0
+                  return s + (p.openQuantity * p.previousClosingPrice - p.openQuantity * avg)
+                }, 0)
                 return `${total >= 0 ? '+' : ''}${fmt(total)}`
               })()}
             </td>

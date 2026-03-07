@@ -1,13 +1,8 @@
 import type { TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
+import { formatCurrencyINR as formatCurrency } from '@/lib/format'
 
 interface TradingStyleSectionProps {
   tradingStyles: TradingStyleResult
-}
-
-function formatCurrency(value: number): string {
-  const abs = Math.abs(value)
-  const formatted = abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  return `${value < 0 ? '-' : ''}Rs. ${formatted}`
 }
 
 const STYLE_LABELS: Array<{ key: keyof Pick<TradingStyleResult, 'intraday' | 'btst' | 'velocity' | 'swing'>; label: string; description: string }> = [

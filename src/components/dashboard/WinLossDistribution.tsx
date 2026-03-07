@@ -48,7 +48,7 @@ export function WinLossDistribution({ symbolPnL }: WinLossDistributionProps) {
 
     // Only count closed positions
     for (const s of symbolPnL) {
-      if (s.openQuantity > 0) continue
+      if (s.openQuantity !== 0) continue
       counts[classifyIntoBucket(s.realizedPnL)]++
     }
 

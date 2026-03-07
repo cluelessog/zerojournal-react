@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { RawTrade, SymbolPnL } from '@/lib/types'
 import { buildTimeline } from '@/lib/engine/timeline'
-import { useUIStore } from '@/lib/store/ui-store'
+import { usePortfolioStore } from '@/lib/store/portfolio-store'
 
 type Aggregation = 'daily' | 'weekly' | 'monthly'
 type ViewMode = 'pnl' | 'portfolio'
@@ -97,8 +97,9 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('pnl')
   const [capitalInput, setCapitalInput] = useState('')
 
-  const initialCapital = useUIStore((s) => s.initialCapital)
-  const setInitialCapital = useUIStore((s) => s.setInitialCapital)
+  const initialCapital = usePortfolioStore((s) => s.initialCapital)
+  const setCapital = usePortfolioStore((s) => s.setInitialCapital)
+  const clearCapital = usePortfolioStore((s) => s.clearInitialCapital)
 
   const timeline = useMemo(
     () => buildTimeline(trades, symbolPnL, aggregation),
@@ -125,13 +126,13 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
   function handleCapitalSubmit() {
     const val = parseFloat(capitalInput.replace(/,/g, ''))
     if (!isNaN(val) && val > 0) {
-      setInitialCapital(val)
+      setCapital(val)
       setViewMode('portfolio')
     }
   }
 
   function handleCapitalClear() {
-    setInitialCapital(null)
+    clearCapital()
     setCapitalInput('')
     setViewMode('pnl')
   }

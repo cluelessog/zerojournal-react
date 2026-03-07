@@ -248,13 +248,13 @@ describe('calculateMonthlyBreakdown with initialCapital', () => {
     ]
     const summary = makePnLSummary({ totalRealizedPnL: 500, netPnL: 400 })
 
-    const withCapital = calculateMonthlyBreakdown(trades, summary, summary.charges, symbols, 100000)
+    const withCapital = calculateMonthlyBreakdown(trades, summary, symbols, 100000)
     expect(withCapital.length).toBe(1)
     // With capital, maxDrawdown should be a small percentage (not absolute INR)
     expect(withCapital[0].maxDrawdown).toBeGreaterThanOrEqual(-100)
     expect(withCapital[0].maxDrawdown).toBeLessThanOrEqual(0)
 
-    const withoutCapital = calculateMonthlyBreakdown(trades, summary, summary.charges, symbols)
+    const withoutCapital = calculateMonthlyBreakdown(trades, summary, symbols)
     // Without capital, behavior depends on curve shape
     expect(withoutCapital.length).toBe(1)
   })
@@ -269,7 +269,7 @@ describe('calculateMonthlyBreakdown with initialCapital', () => {
     ]
     const summary = makePnLSummary({ totalRealizedPnL: -1000, netPnL: -1100 })
 
-    const result = calculateMonthlyBreakdown(trades, summary, summary.charges, symbols)
+    const result = calculateMonthlyBreakdown(trades, summary, symbols)
     expect(result.length).toBe(1)
     // With only losses and no capital, this should be absolute mode (value < -100 indicates INR)
     expect(result[0].maxDrawdown).toBeLessThan(0)

@@ -3,23 +3,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Info } from 'lucide-react'
 import type { TradeAnalytics, PnLSummary, MonthlyMetric } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { formatCurrencyINR as formatCurrency, formatPercent, formatNumber } from '@/lib/format'
 
 interface MetricsCardsProps {
   analytics: TradeAnalytics
   pnlSummary: PnLSummary
   monthlyBreakdown?: MonthlyMetric[]
-}
-
-function formatCurrency(value: number): string {
-  return `Rs. ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function formatPercent(value: number): string {
-  return `${value.toFixed(1)}%`
-}
-
-function formatNumber(value: number): string {
-  return value.toLocaleString('en-IN')
 }
 
 interface MetricCardProps {
@@ -75,7 +64,7 @@ export function MetricsCards({ analytics, pnlSummary, monthlyBreakdown }: Metric
           label="Total P&L"
           value={formatCurrency(analytics.totalRealizedPnL)}
           colorClass={getPnLColorClass(analytics.totalRealizedPnL)}
-          tooltip="Realized P&L (net of broker charges)"
+          tooltip="Gross realized P&L (before charges)"
         />
         <MetricCard
           label="Win Rate"
