@@ -7,7 +7,7 @@ import { TradeFilters } from '@/components/trades/TradeFilters'
 import { TradesTable } from '@/components/trades/TradesTable'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
-import { exportTradesCSV } from '@/lib/persistence/import-export'
+import { exportTradesCSV, exportSymbolPnLCSV } from '@/lib/persistence/import-export'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -15,6 +15,7 @@ export default function TradesPage() {
   const { trades, isLoaded } = usePortfolioStore()
 
   // Load snapshot from IndexedDB on first mount (if not already loaded)
+  const symbolPnL = usePortfolioStore((s) => s.symbolPnL)
   const loadFromDB = usePortfolioStore((s) => s.loadFromDB)
   React.useEffect(() => {
     if (!isLoaded) {
@@ -118,7 +119,8 @@ export default function TradesPage() {
         onDateToChange={(to) => setDateRange({ ...dateRange, to })}
         onTradeTypeChange={setTradeType}
         onGroupByChange={setGroupBy}
-        onExportCSV={() => exportTradesCSV(filteredTrades)}
+        onExportTradesCSV={() => exportTradesCSV(filteredTrades)}
+        onExportPnLCSV={() => exportSymbolPnLCSV(symbolPnL, trades)}
         onReset={resetTradeFilters}
       />
 

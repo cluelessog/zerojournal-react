@@ -32,7 +32,7 @@ interface PortfolioStore {
   initialCapital: number | null
 
   // Actions
-  importData: (tradebookResult: ParseTradebookResult, pnlResult: ParsePnLResult) => Promise<void>
+  importData: (tradebookResult: ParseTradebookResult, pnlResult: ParsePnLResult, fileNames?: { tradebook?: string; pnl?: string }) => Promise<void>
   loadFromDB: () => Promise<void>
   clearData: () => Promise<void>
   resetData: () => void
@@ -72,7 +72,7 @@ const initialState = {
 export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
   ...initialState,
 
-  importData: async (tradebookResult: ParseTradebookResult, pnlResult: ParsePnLResult) => {
+  importData: async (tradebookResult: ParseTradebookResult, pnlResult: ParsePnLResult, fileNames?: { tradebook?: string; pnl?: string }) => {
     const orderGroups = groupOrders(tradebookResult.trades)
     const now = new Date().toISOString()
 
@@ -95,8 +95,8 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     }
 
     const metadata: ImportMetadata = {
-      tradebookFileName: null,
-      pnlFileName: null,
+      tradebookFileName: fileNames?.tradebook ?? null,
+      pnlFileName: fileNames?.pnl ?? null,
       tradebookRowCount: trades.length,
       pnlSymbolCount: symbolPnL.length,
       importedAt: now,
