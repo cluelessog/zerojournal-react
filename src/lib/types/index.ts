@@ -222,6 +222,9 @@ export interface TimelinePoint {
   date: string
   dailyPnL: number
   cumulativePnL: number
+  dailyNetPnL: number
+  cumulativeNetPnL: number
+  dailyCharges: number
   tradeCount: number
 }
 

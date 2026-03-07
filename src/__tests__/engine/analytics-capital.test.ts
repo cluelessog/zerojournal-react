@@ -310,7 +310,7 @@ describe('computeAnalytics with initialCapital', () => {
     // With capital: percentage mode
     const withCapital = computeAnalytics(snapshot, 100000)
     expect(withCapital.maxDrawdown.mode).toBe('percentage')
-    expect(withCapital.maxDrawdown.value).toBeCloseTo(-1.5, 1) // -1500/100000*100
+    expect(withCapital.maxDrawdown.value).toBeCloseTo(-1.6, 1) // net: -(1500+100 charges)/100000*100
   })
 
   it('does not affect other analytics when capital is set', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeAnalytics } from '@/lib/engine/analytics'
 import type { SymbolPnL, RawTrade, PnLSummary } from '@/lib/types'
+import type { AnalyticsInput } from '@/lib/engine/analytics'
 
 /**
  * Ground truth values from the design doc (section 8.2):
@@ -57,7 +58,7 @@ function makeTrade(symbol: string, date: string, type: 'buy' | 'sell'): RawTrade
   }
 }
 
-function buildTestSnapshot(): PortfolioSnapshot {
+function buildTestSnapshot(): AnalyticsInput {
   // Build 49 winners, 101 losers, 1 breakeven = 151 closed symbols
   // Plus 1 open position (SHARDACROP) = 152 total
   const symbolPnL: SymbolPnL[] = []

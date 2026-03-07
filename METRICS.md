@@ -19,9 +19,11 @@ Where:
 ### Calculation Process
 
 1. **Daily Invested Capital**: For each trading day, sum `price × quantity` for all BUY trades
-2. **Daily Percentage Returns**: For each day with invested capital > 0, compute `daily_pnl / daily_invested_capital`
-3. **Skip Sell-Only Days**: Days with no buy trades (and thus no invested capital) are excluded from the returns series
-4. **Sharpe Calculation**: Apply the formula above to the percentage returns array
+2. **Charge Distribution**: Total charges (from `PnLSummary.charges.total`, excludes DP) distributed proportionally by daily turnover: `dayCharges = totalCharges × (dayTurnover / totalTurnover)`
+3. **Net Daily P&L**: `grossDailyPnL - dayCharges`
+4. **Daily Percentage Returns**: For each day with invested capital > 0, compute `netDailyPnL / daily_invested_capital`
+5. **Skip Sell-Only Days**: Days with no buy trades (and thus no invested capital) are excluded from the returns series
+6. **Sharpe Calculation**: Apply the formula above to the net percentage returns array
 
 ### Edge Cases
 
@@ -64,9 +66,10 @@ Where:
 ### Calculation Process
 
 1. Build cumulative P&L series from `SymbolPnL.realizedPnL` distributed across sell dates proportionally by sell quantity (per-trade attribution)
-2. Track the running maximum (high-water mark) as you walk through time
-3. At each point, compute the percentage decline from that peak
-4. Return the worst (most negative) drawdown value
+2. Deduct charges proportionally by turnover at each close date (net equity curve): `dayCharges = totalCharges × (dayTurnover / totalTurnover)`, last date gets remainder to prevent rounding drift
+3. Track the running maximum (high-water mark) as you walk through time
+4. At each point, compute the percentage decline from that peak
+5. Return the worst (most negative) drawdown value
 
 ### Maximum Drawdown per Month
 
@@ -114,8 +117,26 @@ Where:
 - **Charges**: Fees, commissions, slippage allocated to the period
 - **Net P&L**: Gross P&L - Charges
 
+### Charge Distribution
+
+All metrics that use daily P&L (Sharpe ratio, max drawdown, min drawup, P&L timeline) distribute total charges proportionally by **turnover**:
+
+```
+dayCharges = totalCharges × (dayTurnover / totalTurnover)
+```
+
+This matches how charges actually accrue: STT (% of sell value), brokerage (% of trade value), exchange transaction charges, stamp duty, and GST all scale with trade value, not trade count.
+
+The last date in any series receives `totalCharges - sumOfPriorAllocations` to ensure zero rounding drift.
+
+**Charge source**: `PnLSummary.charges.total` (excludes DP charges, consistent with existing convention).
+
+### P&L Timeline Chart
+
+The equity curve defaults to **Net P&L** (after charges). A Gross/Net toggle allows switching views. This follows GIPS 2020 standards and CFA curriculum guidance that net returns represent "what investors actually earned."
+
 ---
 
-**Version**: 1.0
-**Last Updated**: 2026-03-04
+**Version**: 1.1
+**Last Updated**: 2026-03-07
 **Author**: zeroJournal Development Team
