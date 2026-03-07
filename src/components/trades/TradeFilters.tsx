@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { Search, Download, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { ExportDropdown } from '@/components/trades/ExportDropdown'
 
 type TradeTypeFilter = 'all' | 'buy' | 'sell'
 type GroupBy = 'none' | 'symbol' | 'order'
@@ -19,7 +20,8 @@ interface TradeFiltersProps {
   onDateToChange: (date: string) => void
   onTradeTypeChange: (type: TradeTypeFilter) => void
   onGroupByChange: (groupBy: GroupBy) => void
-  onExportCSV: () => void
+  onExportTradesCSV: () => void
+  onExportPnLCSV: () => void
   onReset: () => void
 }
 
@@ -64,7 +66,8 @@ export function TradeFilters({
   onDateToChange,
   onTradeTypeChange,
   onGroupByChange,
-  onExportCSV,
+  onExportTradesCSV,
+  onExportPnLCSV,
   onReset,
 }: TradeFiltersProps) {
   const [symbolSearch, setSymbolSearch] = React.useState('')
@@ -216,10 +219,10 @@ export function TradeFilters({
             Reset
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={onExportCSV}>
-          <Download className="size-4 mr-1" />
-          Export CSV
-        </Button>
+        <ExportDropdown
+          onExportTradesCSV={onExportTradesCSV}
+          onExportPnLCSV={onExportPnLCSV}
+        />
       </div>
     </div>
   )

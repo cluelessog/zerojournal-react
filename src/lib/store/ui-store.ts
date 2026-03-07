@@ -8,7 +8,6 @@ type GroupBy = 'none' | 'symbol' | 'order'
 interface UIStore {
   // State
   sidebarOpen: boolean
-  activeTab: string
   filters: TradeFilters
 
   // Trade page state
@@ -20,7 +19,6 @@ interface UIStore {
   // Actions
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
-  setActiveTab: (tab: string) => void
   setFilters: (filters: Partial<TradeFilters>) => void
   resetFilters: () => void
 
@@ -35,7 +33,6 @@ interface UIStore {
 
 export const useUIStore = create<UIStore>((set) => ({
   sidebarOpen: true,
-  activeTab: 'overview',
   filters: defaultTradeFilters,
 
   // Trade page initial state
@@ -46,7 +43,6 @@ export const useUIStore = create<UIStore>((set) => ({
 
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  setActiveTab: (tab) => set({ activeTab: tab }),
   setFilters: (filters) =>
     set((state) => ({ filters: { ...state.filters, ...filters } })),
   resetFilters: () => set({ filters: defaultTradeFilters }),

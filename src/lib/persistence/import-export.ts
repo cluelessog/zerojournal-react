@@ -42,6 +42,30 @@ function triggerDownload(content: string, filename: string, mimeType: string): v
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
 
+/**
+ * Build a filename with date range from trade dates.
+ * Format: zerojournal-{prefix}_{YYYY-MM-DD}_to_{YYYY-MM-DD}.csv
+ * Falls back to ISO timestamp when trades array is empty or dates unavailable.
+ */
+export function buildDateRangeFilename(prefix: string, trades: RawTrade[]): string {
+  if (trades.length === 0) {
+    return `zerojournal-${prefix}-${timestamp()}.csv`
+  }
+
+  const dates = trades
+    .map(t => t.tradeDate)
+    .filter(d => d && d.length >= 10)
+    .sort()
+
+  if (dates.length === 0) {
+    return `zerojournal-${prefix}-${timestamp()}.csv`
+  }
+
+  const minDate = dates[0].slice(0, 10)
+  const maxDate = dates[dates.length - 1].slice(0, 10)
+  return `zerojournal-${prefix}_${minDate}_to_${maxDate}.csv`
+}
+
 export function exportTradesCSV(trades: RawTrade[]): void {
   const headers = [
     'Symbol',
@@ -74,7 +98,7 @@ export function exportTradesCSV(trades: RawTrade[]): void {
     t.orderExecutionTime,
   ])
   const csv = buildCSV(headers, rows)
-  triggerDownload(csv, `zerojournal-trades-${timestamp()}.csv`, 'text/csv;charset=utf-8;')
+  triggerDownload(csv, buildDateRangeFilename('trades', trades), 'text/csv;charset=utf-8;')
 }
 
 export function exportTradesJSON(trades: RawTrade[]): void {
@@ -82,7 +106,7 @@ export function exportTradesJSON(trades: RawTrade[]): void {
   triggerDownload(json, `zerojournal-trades-${timestamp()}.json`, 'application/json')
 }
 
-export function exportSymbolPnLCSV(symbolPnLs: SymbolPnL[]): void {
+export function exportSymbolPnLCSV(symbolPnLs: SymbolPnL[], trades?: RawTrade[]): void {
   const headers = [
     'Symbol',
     'ISIN',
@@ -106,5 +130,5 @@ export function exportSymbolPnLCSV(symbolPnLs: SymbolPnL[]): void {
     s.previousClosingPrice.toFixed(2),
   ])
   const csv = buildCSV(headers, rows)
-  triggerDownload(csv, `zerojournal-symbol-pnl-${timestamp()}.csv`, 'text/csv;charset=utf-8;')
+  triggerDownload(csv, buildDateRangeFilename('symbol-pnl', trades ?? []), 'text/csv;charset=utf-8;')
 }

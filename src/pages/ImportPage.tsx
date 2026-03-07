@@ -51,13 +51,8 @@ export default function ImportPage() {
     setState('parsing')
     setProgressText('Parsing files...')
 
-    const t0 = performance.now()
-
     try {
       const parseResult = await startParse(tradebookFile, pnlFile)
-
-      const elapsed = Math.round(performance.now() - t0)
-      console.log(`Parse complete: ${elapsed}ms`)
 
       if (!parseResult) {
         setAllErrors([{ code: 'PARSE_FAILED', message: 'Parsing returned no result' }])
@@ -76,8 +71,6 @@ export default function ImportPage() {
 
       setState('previewing')
     } catch (err) {
-      const elapsed = Math.round(performance.now() - t0)
-      console.log(`Parse failed: ${elapsed}ms`)
       const message = err instanceof Error ? err.message : 'Unexpected error during parsing'
       setAllErrors([{ code: 'PARSE_FAILED', message }])
       setState('previewing')
@@ -91,7 +84,10 @@ export default function ImportPage() {
     setProgressText('Saving to local storage...')
 
     try {
-      await importData(tradebookResult, pnlResult)
+      await importData(tradebookResult, pnlResult, {
+        tradebook: tradebookFile?.name,
+        pnl: pnlFile?.name,
+      })
       setState('complete')
       navigate('/')
     } catch (err) {

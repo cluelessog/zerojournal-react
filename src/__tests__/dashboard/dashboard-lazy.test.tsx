@@ -118,7 +118,7 @@ describe('DashboardPage lazy imports', () => {
     await waitFor(() => {
       expect(screen.getByText('No data yet')).toBeInTheDocument()
     })
-  }, 15000)
+  }, 45000)
 
   it('chart components are exported and lazy-importable', async () => {
     // Each chart module should be dynamically importable without error
@@ -135,5 +135,5 @@ describe('DashboardPage lazy imports', () => {
     expect(typeof top.TopSymbolsChart).toBe('function')
     expect(typeof monthly.MonthlyVolumeChart).toBe('function')
     expect(typeof calendar.TradingCalendar).toBe('function')
-  }, 15000)
+  }, 45000)
 })

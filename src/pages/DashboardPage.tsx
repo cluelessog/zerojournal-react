@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -9,6 +9,8 @@ import { TradingStyleSection } from '@/components/dashboard/TradingStyleSection'
 import { ChartSkeleton } from '@/components/dashboard/ChartSkeleton'
 import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
 import { CapitalInput } from '@/components/dashboard/CapitalInput'
+import { KeyInsights } from '@/components/dashboard/KeyInsights'
+import { generateInsights } from '@/lib/engine/insights'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const PnLTimelineChart = lazy(() =>
@@ -41,6 +43,11 @@ export default function DashboardPage() {
 
   const [tab, setTab] = useState<'overview' | 'analytics' | 'trades'>('overview')
 
+  const insights = useMemo(() => {
+    if (!analytics) return []
+    return generateInsights(analytics)
+  }, [analytics])
+
   const monthTradeCounts = useMemo(() => {
     const map = new Map<string, number>()
     for (const t of trades) {
@@ -50,10 +57,6 @@ export default function DashboardPage() {
     return map
   }, [trades])
 
-  const startTime = useRef(performance.now())
-  useEffect(() => {
-    console.log(`Dashboard render: ${Math.round(performance.now() - startTime.current)}ms`)
-  }, [])
 
   // Empty state: no data imported yet
   if (!isLoaded || !analytics || !pnlSummary || symbolPnL.length === 0) {
@@ -133,6 +136,9 @@ export default function DashboardPage() {
         {/* ── Analytics Tab ────────────────────────────────────────────── */}
         <TabsContent value="analytics">
           <div className="space-y-6 pt-4">
+            {/* Row 0: Key Insights */}
+            <KeyInsights insights={insights} totalTrades={analytics.totalTrades} />
+
             {/* Row 1: Sharpe, Max DD, Min DU */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <div className="rounded-lg border p-4">

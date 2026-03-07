@@ -207,6 +207,20 @@ export interface TradeAnalytics {
   tradingStyles: TradingStyleResult
 }
 
+// ─── Insight Types ──────────────────────────────────────────────────────────
+
+export type InsightSeverity = 'critical' | 'warning' | 'positive' | 'info'
+
+export interface Insight {
+  id: string
+  severity: InsightSeverity
+  priority: number        // higher = more important, sorted descending
+  title: string
+  description: string
+  metric?: string         // optional metric name for linking
+  recommendation?: string // optional actionable advice
+}
+
 export interface CrossReferenceData {
   pnlBuyTotal: number
   pnlSellTotal: number
