@@ -30,47 +30,59 @@ const TRADING_DAYS_PER_YEAR = 252
 export function calculateSharpeRatio(
   trades: RawTrade[],
   riskFreeRate: number = 0.02,
+  totalCharges: number = 0,
 ): number {
   if (trades.length < 2) return 0
 
-  // Build daily P&L map and daily invested capital map in one pass.
+  // Build daily P&L map, daily invested capital map, and daily turnover in one pass.
   // Invested capital per day = sum of (price * quantity) for BUY trades only.
-  // Sell-only days are excluded from percentage returns because there is no
-  // capital base to denominate the return against.
+  // Daily turnover = sum of (price * quantity) for ALL trades (for charge distribution).
   //
   // Sharpe Ratio using daily invested capital (standard methodology per
   // Sharpe 1994, CFA curriculum):
-  //   pct_return[day] = dailyPnL[day] / dailyCapital[day]
+  //   pct_return[day] = netDailyPnL[day] / dailyCapital[day]
   //   Sharpe = ((mean(pct_returns) - rf_daily) / std(pct_returns)) * sqrt(252)
   //   rf_daily = annualRate / 252
   //   std uses N-1 denominator (sample variance)
   const dailyPnL = new Map<string, number>()
   const dailyCapital = new Map<string, number>()
+  const dailyTurnover = new Map<string, number>()
   for (const t of trades) {
     const cashFlow = t.tradeType === 'sell'
       ? t.price * t.quantity
       : -(t.price * t.quantity)
+    const turnover = t.price * t.quantity
     dailyPnL.set(t.tradeDate, (dailyPnL.get(t.tradeDate) ?? 0) + cashFlow)
+    dailyTurnover.set(t.tradeDate, (dailyTurnover.get(t.tradeDate) ?? 0) + turnover)
     if (t.tradeType === 'buy') {
       dailyCapital.set(t.tradeDate, (dailyCapital.get(t.tradeDate) ?? 0) + t.price * t.quantity)
     }
   }
 
-  // Compute percentage returns for all trading days.
+  // Total turnover for charge distribution
+  let totalTurnover = 0
+  for (const v of dailyTurnover.values()) totalTurnover += v
+
+  // Compute percentage returns for all trading days using net P&L.
   // For sell-only days (no buy capital), carry forward the most recent day's capital
   // so that overnight swing trades (buy day 1, sell day 2) are properly accounted for.
   const sortedDates = Array.from(dailyPnL.keys()).sort()
   const returns: number[] = []
   let carryCapital = 0
   for (const date of sortedDates) {
-    const pnl = dailyPnL.get(date)!
+    const grossPnL = dailyPnL.get(date)!
+    // Distribute charges proportionally by daily turnover
+    const dayTurnover = dailyTurnover.get(date) ?? 0
+    const dayCharges = totalTurnover > 0 ? totalCharges * (dayTurnover / totalTurnover) : 0
+    const netPnL = grossPnL - dayCharges
+
     const dayCapital = dailyCapital.get(date) ?? 0
     if (dayCapital > 0) {
       carryCapital = dayCapital
     }
     const effectiveCapital = dayCapital > 0 ? dayCapital : carryCapital
     if (effectiveCapital > 0) {
-      returns.push(pnl / effectiveCapital)
+      returns.push(netPnL / effectiveCapital)
     }
   }
 
@@ -142,6 +154,66 @@ function buildDatePnLMap(
     }
   }
   return dateMap
+}
+
+/**
+ * Build a date -> turnover map for charge distribution in drawdown/drawup.
+ * Turnover per symbol (sum of price*quantity for all trades) is distributed
+ * across close dates using the same attributions as P&L.
+ */
+function buildDateTurnoverMap(
+  closedSymbols: SymbolPnL[],
+  trades: RawTrade[],
+  attributions: Map<string, Array<{ date: string; weight: number }>>,
+): Map<string, number> {
+  // symbol -> total turnover
+  const symbolTurnover = new Map<string, number>()
+  for (const t of trades) {
+    symbolTurnover.set(t.symbol, (symbolTurnover.get(t.symbol) ?? 0) + t.price * t.quantity)
+  }
+  const dateMap = new Map<string, number>()
+  for (const s of closedSymbols) {
+    const attrs = attributions.get(s.symbol)
+    if (!attrs) continue
+    const turnover = symbolTurnover.get(s.symbol) ?? 0
+    for (const { date, weight } of attrs) {
+      dateMap.set(date, (dateMap.get(date) ?? 0) + turnover * weight)
+    }
+  }
+  return dateMap
+}
+
+/**
+ * Build a net cumulative P&L series by deducting turnover-proportional charges.
+ */
+function buildNetCumulativeSeries(
+  datePnLMap: Map<string, number>,
+  dateTurnoverMap: Map<string, number>,
+  totalCharges: number,
+): Array<{ date: string; value: number }> {
+  let totalTurnover = 0
+  for (const v of dateTurnoverMap.values()) totalTurnover += v
+
+  const sortedDates = Array.from(datePnLMap.keys()).sort()
+  const cumulative: Array<{ date: string; value: number }> = []
+  let running = 0
+  let allocatedCharges = 0
+
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i]
+    const grossPnL = datePnLMap.get(date)!
+    let dayCharges: number
+    if (i === sortedDates.length - 1) {
+      dayCharges = totalCharges - allocatedCharges
+    } else {
+      const turnover = dateTurnoverMap.get(date) ?? 0
+      dayCharges = totalTurnover > 0 ? totalCharges * (turnover / totalTurnover) : 0
+    }
+    allocatedCharges += dayCharges
+    running += grossPnL - dayCharges
+    cumulative.push({ date, value: running })
+  }
+  return cumulative
 }
 
 /**
@@ -253,6 +325,7 @@ export function calculateMaxDrawdown(
   trades: RawTrade[],
   initialCapital?: number | null,
   _attributions?: Map<string, Array<{ date: string; weight: number }>>,
+  totalCharges: number = 0,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
@@ -264,13 +337,9 @@ export function calculateMaxDrawdown(
   const sortedDates = Array.from(dateMap.keys()).sort()
   if (sortedDates.length === 0) return empty
 
-  // Build cumulative series from close-date P&L
-  const cumulative: Array<{ date: string; value: number }> = []
-  let running = 0
-  for (const date of sortedDates) {
-    running += dateMap.get(date)!
-    cumulative.push({ date, value: running })
-  }
+  // Build cumulative series — net of charges when totalCharges > 0
+  const dateTurnover = buildDateTurnoverMap(closedSymbols, trades, attributions)
+  const cumulative = buildNetCumulativeSeries(dateMap, dateTurnover, totalCharges)
 
   return computeHWMDrawdown(cumulative, initialCapital)
 }
@@ -292,6 +361,7 @@ export function calculateMinDrawup(
   trades: RawTrade[],
   initialCapital?: number | null,
   _attributions?: Map<string, Array<{ date: string; weight: number }>>,
+  totalCharges: number = 0,
 ): DrawdownMetric {
   const empty: DrawdownMetric = { value: 0, peakDate: '', troughDate: '', status: 'no_data' }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
@@ -303,12 +373,9 @@ export function calculateMinDrawup(
   const sortedDates = Array.from(dateMap.keys()).sort()
   if (sortedDates.length === 0) return empty
 
-  const cumulative: Array<{ date: string; value: number }> = []
-  let running = 0
-  for (const date of sortedDates) {
-    running += dateMap.get(date)!
-    cumulative.push({ date, value: running })
-  }
+  // Build cumulative series — net of charges when totalCharges > 0
+  const dateTurnover = buildDateTurnoverMap(closedSymbols, trades, attributions)
+  const cumulative = buildNetCumulativeSeries(dateMap, dateTurnover, totalCharges)
 
   const hasCapital = initialCapital != null && initialCapital > 0
 
@@ -896,9 +963,9 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
   // --- Sprint 2 advanced analytics ---
   // Build trade attributions: distributes P&L across sell dates (not just last sell date)
   const tradeAttributions = buildTradeAttributions(trades)
-  const sharpeRatio = calculateSharpeRatio(trades)
-  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital, tradeAttributions)
-  const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital, tradeAttributions)
+  const sharpeRatio = calculateSharpeRatio(trades, 0.02, totalCharges)
+  const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital, tradeAttributions, totalCharges)
+  const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital, tradeAttributions, totalCharges)
   const streaks = calculateStreaks(symbolPnL, trades, tradeAttributions)
   const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, symbolPnL, initialCapital, tradeAttributions)
 

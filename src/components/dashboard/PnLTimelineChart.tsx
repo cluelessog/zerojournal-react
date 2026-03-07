@@ -18,6 +18,7 @@ import { usePortfolioStore } from '@/lib/store/portfolio-store'
 
 type Aggregation = 'daily' | 'weekly' | 'monthly'
 type ViewMode = 'pnl' | 'portfolio'
+type CostMode = 'net' | 'gross'
 
 interface PnLTimelineChartProps {
   trades: RawTrade[]
@@ -39,53 +40,78 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
+function fmtINR(value: number): string {
+  return value.toLocaleString('en-IN', { minimumFractionDigits: 2 })
+}
+
 function CustomTooltip({
   active,
   payload,
   label,
   viewMode,
   initialCapital,
+  costMode,
 }: {
   active?: boolean
   payload?: Array<{ value: number; dataKey: string }>
   label?: string
   viewMode: ViewMode
   initialCapital: number | null
+  costMode: CostMode
 }) {
   if (!active || !payload || payload.length === 0 || !label) return null
 
-  const dataPoint = payload[0] as unknown as { payload: { dailyPnL: number; cumulativePnL: number } }
+  const dataPoint = payload[0] as unknown as {
+    payload: {
+      dailyPnL: number
+      cumulativePnL: number
+      dailyNetPnL: number
+      cumulativeNetPnL: number
+      dailyCharges: number
+    }
+  }
   const dateStr = new Date(label).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   })
 
-  const cumPnL = dataPoint.payload.cumulativePnL
-  const portfolioValue = initialCapital != null ? initialCapital + cumPnL : null
+  const d = dataPoint.payload
+  const dailyVal = costMode === 'net' ? d.dailyNetPnL : d.dailyPnL
+  const cumVal = costMode === 'net' ? d.cumulativeNetPnL : d.cumulativePnL
+  const portfolioValue = initialCapital != null ? initialCapital + cumVal : null
 
   return (
     <div className="rounded-lg border bg-background p-3 shadow-md">
       <p className="text-sm font-medium">{dateStr}</p>
       <p className="text-sm text-muted-foreground">
         Daily P&L:{' '}
-        <span className={dataPoint.payload.dailyPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-          Rs. {dataPoint.payload.dailyPnL.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        <span className={dailyVal >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+          Rs. {fmtINR(dailyVal)}
         </span>
+        {costMode === 'net' && d.dailyCharges > 0 && (
+          <span className="text-muted-foreground/60"> (charges: {fmtINR(d.dailyCharges)})</span>
+        )}
       </p>
       {viewMode === 'portfolio' && portfolioValue != null ? (
         <p className="text-sm text-muted-foreground">
           Portfolio:{' '}
           <span className={portfolioValue >= (initialCapital ?? 0) ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-            Rs. {portfolioValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            Rs. {fmtINR(portfolioValue)}
           </span>
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
           Cumulative:{' '}
-          <span className={cumPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-            Rs. {cumPnL.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          <span className={cumVal >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+            Rs. {fmtINR(cumVal)}
           </span>
+        </p>
+      )}
+      {/* Always show both gross and net in tooltip for comparison */}
+      {costMode === 'net' && d.dailyPnL !== d.dailyNetPnL && (
+        <p className="text-xs text-muted-foreground/60 mt-1">
+          Gross: Rs. {fmtINR(d.dailyPnL)} | Net: Rs. {fmtINR(d.dailyNetPnL)}
         </p>
       )}
     </div>
@@ -95,15 +121,20 @@ function CustomTooltip({
 export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
   const [aggregation, setAggregation] = useState<Aggregation>('daily')
   const [viewMode, setViewMode] = useState<ViewMode>('pnl')
+  const [costMode, setCostMode] = useState<CostMode>('net')
   const [capitalInput, setCapitalInput] = useState('')
 
   const initialCapital = usePortfolioStore((s) => s.initialCapital)
   const setCapital = usePortfolioStore((s) => s.setInitialCapital)
   const clearCapital = usePortfolioStore((s) => s.clearInitialCapital)
+  const pnlSummary = usePortfolioStore((s) => s.pnlSummary)
+
+  // Total charges (excluding DP — consistent with existing convention)
+  const totalCharges = pnlSummary?.charges.total ?? 0
 
   const timeline = useMemo(
-    () => buildTimeline(trades, symbolPnL, aggregation),
-    [trades, symbolPnL, aggregation]
+    () => buildTimeline(trades, symbolPnL, aggregation, totalCharges),
+    [trades, symbolPnL, aggregation, totalCharges]
   )
 
   // Transform timeline for portfolio value view
@@ -111,11 +142,11 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
     if (viewMode === 'portfolio' && initialCapital != null) {
       return timeline.map((point) => ({
         ...point,
-        portfolioValue: initialCapital + point.cumulativePnL,
+        portfolioValue: initialCapital + (costMode === 'net' ? point.cumulativeNetPnL : point.cumulativePnL),
       }))
     }
     return timeline
-  }, [timeline, viewMode, initialCapital])
+  }, [timeline, viewMode, initialCapital, costMode])
 
   const aggregationOptions: { key: Aggregation; label: string }[] = [
     { key: 'daily', label: 'D' },
@@ -139,13 +170,36 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
 
   const isPortfolioMode = viewMode === 'portfolio' && initialCapital != null
   const referenceLineY = isPortfolioMode ? initialCapital : 0
-  const dataKey = isPortfolioMode ? 'portfolioValue' : 'cumulativePnL'
+  const dataKey = isPortfolioMode
+    ? 'portfolioValue'
+    : costMode === 'net'
+      ? 'cumulativeNetPnL'
+      : 'cumulativePnL'
 
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between pb-2">
         <CardTitle className="text-base font-semibold">P&L Timeline</CardTitle>
         <div className="flex items-center gap-2">
+          {/* Gross/Net toggle */}
+          <div className="flex gap-1">
+            <Button
+              variant={costMode === 'net' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setCostMode('net')}
+            >
+              Net
+            </Button>
+            <Button
+              variant={costMode === 'gross' ? 'default' : 'outline'}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setCostMode('gross')}
+            >
+              Gross
+            </Button>
+          </div>
           {/* View toggle (only visible when initial capital is set) */}
           {initialCapital != null && (
             <div className="flex gap-1">
@@ -237,6 +291,7 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
                   <CustomTooltip
                     viewMode={viewMode}
                     initialCapital={initialCapital}
+                    costMode={costMode}
                   />
                 }
               />
@@ -255,8 +310,8 @@ export function PnLTimelineChart({ trades, symbolPnL }: PnLTimelineChartProps) {
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           {isPortfolioMode
-            ? `Portfolio Value = Rs. ${initialCapital.toLocaleString('en-IN')} + Cumulative P&L. P&L attributed to position close date.`
-            : 'P&L attributed to position close date. Daily attribution is approximate.'}
+            ? `Portfolio Value = Rs. ${initialCapital.toLocaleString('en-IN')} + Cumulative ${costMode === 'net' ? 'Net' : 'Gross'} P&L. P&L attributed to position close date.`
+            : `${costMode === 'net' ? 'Net' : 'Gross'} P&L attributed to position close date.${costMode === 'net' ? ' Charges distributed by turnover.' : ''}`}
         </p>
       </CardContent>
     </Card>

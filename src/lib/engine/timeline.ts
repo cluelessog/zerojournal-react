@@ -8,11 +8,17 @@ type Aggregation = 'daily' | 'weekly' | 'monthly'
  * to the last sell date for that symbol (v1 simplification per ADR-005).
  *
  * Open positions (openQuantity !== 0) are excluded from the timeline.
+ *
+ * When totalCharges is provided, charges are distributed across dates
+ * proportionally by turnover (sum of price × quantity for all trades
+ * of symbols closing on that date). This matches how charges actually
+ * accrue: STT, brokerage, and exchange fees all scale with trade value.
  */
 export function buildTimeline(
   trades: RawTrade[],
   symbolPnL: SymbolPnL[],
-  aggregation: Aggregation = 'daily'
+  aggregation: Aggregation = 'daily',
+  totalCharges: number = 0,
 ): TimelinePoint[] {
   // Build map: symbol -> last sell date
   const lastSellDate = new Map<string, string>()
@@ -25,15 +31,17 @@ export function buildTimeline(
     }
   }
 
-  // Build map: symbol -> trade count on last sell date
+  // Build map: symbol -> trade count
   const tradeCountBySymbol = new Map<string, number>()
+  // Build map: symbol -> total turnover (sum of price × quantity for all trades)
+  const symbolTurnover = new Map<string, number>()
   for (const t of trades) {
-    const key = t.symbol
-    tradeCountBySymbol.set(key, (tradeCountBySymbol.get(key) ?? 0) + 1)
+    tradeCountBySymbol.set(t.symbol, (tradeCountBySymbol.get(t.symbol) ?? 0) + 1)
+    symbolTurnover.set(t.symbol, (symbolTurnover.get(t.symbol) ?? 0) + t.price * t.quantity)
   }
 
-  // Attribute each closed symbol's P&L to its last sell date
-  const dateMap = new Map<string, { pnl: number; count: number }>()
+  // Attribute each closed symbol's P&L and turnover to its last sell date
+  const dateMap = new Map<string, { pnl: number; count: number; turnover: number }>()
 
   for (const s of symbolPnL) {
     // Skip open positions (both long and short) — only closed positions contribute to the timeline
@@ -43,24 +51,56 @@ export function buildTimeline(
     if (!closeDate) continue
 
     const dateKey = toAggregationKey(closeDate, aggregation)
-    const existing = dateMap.get(dateKey) ?? { pnl: 0, count: 0 }
+    const existing = dateMap.get(dateKey) ?? { pnl: 0, count: 0, turnover: 0 }
     existing.pnl += s.realizedPnL
     existing.count += tradeCountBySymbol.get(s.symbol) ?? 0
+    existing.turnover += symbolTurnover.get(s.symbol) ?? 0
     dateMap.set(dateKey, existing)
   }
 
-  // Sort dates and compute cumulative P&L
+  // Total turnover for closed symbols (for charge distribution)
+  let totalClosedTurnover = 0
+  for (const entry of dateMap.values()) {
+    totalClosedTurnover += entry.turnover
+  }
+
+  // Sort dates and compute cumulative P&L (gross and net)
   const sortedDates = [...dateMap.keys()].sort()
   const timeline: TimelinePoint[] = []
-  let cumulative = 0
+  let cumulativeGross = 0
+  let cumulativeNet = 0
+  let allocatedCharges = 0
 
-  for (const date of sortedDates) {
+  for (let i = 0; i < sortedDates.length; i++) {
+    const date = sortedDates[i]
     const entry = dateMap.get(date)!
-    cumulative += entry.pnl
+
+    // Distribute charges proportionally by turnover
+    let dayCharges: number
+    if (i === sortedDates.length - 1) {
+      // Last date gets remainder to avoid rounding drift
+      dayCharges = totalCharges - allocatedCharges
+    } else {
+      dayCharges = totalClosedTurnover > 0
+        ? totalCharges * (entry.turnover / totalClosedTurnover)
+        : 0
+    }
+    allocatedCharges += dayCharges
+
+    const dailyGross = Math.round(entry.pnl * 100) / 100
+    const dailyNet = Math.round((entry.pnl - dayCharges) * 100) / 100
+    dayCharges = Math.round(dayCharges * 100) / 100
+
+    cumulativeGross += dailyGross
+    cumulativeNet += dailyNet
+
     timeline.push({
       date,
-      dailyPnL: Math.round(entry.pnl * 100) / 100,
-      cumulativePnL: Math.round(cumulative * 100) / 100,
+      dailyPnL: dailyGross,
+      cumulativePnL: Math.round(cumulativeGross * 100) / 100,
+      dailyNetPnL: dailyNet,
+      cumulativeNetPnL: Math.round(cumulativeNet * 100) / 100,
+      dailyCharges: dayCharges,
       tradeCount: entry.count,
     })
   }
