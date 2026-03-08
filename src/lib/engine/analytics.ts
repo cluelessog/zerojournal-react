@@ -4,85 +4,63 @@ import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
 /** Number of trading days per year used for Sharpe Ratio annualization. */
 const TRADING_DAYS_PER_YEAR = 252
 
-// ─── US-008: Sharpe Ratio ─────────────────────────────────────────────────────
+// ─── Sharpe Ratio ─────────────────────────────────────────────────────────────
 
 /**
- * Calculate the annualised Sharpe Ratio from a list of raw trades.
+ * Calculates the annualized Sharpe Ratio from FIFO-matched realized returns.
  *
- * P&L per trade is approximated as: for sell trades, price * quantity (inflow);
- * for buy trades, -(price * quantity) (outflow). We group by tradeDate and sum
- * to get daily P&L, then compute mean and std dev of those daily returns.
+ * Uses realized P&L from FIFO matches attributed to sell dates, not raw
+ * buy/sell cashflows. This prevents impossible daily returns for swing trades
+ * (e.g., buy day 1 showing -100%, sell day 2 showing +110%).
  *
- * Formula: (mean_daily_return - daily_risk_free_rate) / std_dev_daily_return
- * Daily risk-free rate: annualRate / 252
+ * Formula: ((mean_daily_return - daily_risk_free_rate) / std_dev) * sqrt(252)
+ *
+ * Daily return = netDailyPnL / dailyCapitalDeployed
+ *   where dailyCapitalDeployed = sum(buyPrice * quantity) for matches closing that day
+ *   and netDailyPnL = grossDailyPnL - turnover-proportional charges
  *
  * Edge cases:
- * - Fewer than 2 trades → return 0
+ * - Fewer than 2 sell dates with realized P&L → return 0
  * - Std dev of daily returns is 0 → return 0
  */
-/**
- * Calculates the annualized Sharpe Ratio.
- * Formula: ((mean_daily_return - daily_risk_free_rate) / std_dev) * sqrt(252)
- * @param trades Raw trades to calculate from
- * @param riskFreeRate Annual risk-free rate (default: 2%)
- * @returns Annualized Sharpe Ratio
- */
 export function calculateSharpeRatio(
-  trades: RawTrade[],
+  fifoMatches: FIFOMatch[],
   riskFreeRate: number = 0.02,
   totalCharges: number = 0,
 ): number {
-  if (trades.length < 2) return 0
+  if (fifoMatches.length < 2) return 0
 
-  // Build daily P&L map, daily invested capital map, and daily turnover in one pass.
-  // Invested capital per day = sum of (price * quantity) for BUY trades only.
-  // Daily turnover = sum of (price * quantity) for ALL trades (for charge distribution).
-  //
-  // Sharpe Ratio using daily invested capital (standard methodology per
-  // Sharpe 1994, CFA curriculum):
-  //   pct_return[day] = netDailyPnL[day] / dailyCapital[day]
-  //   Sharpe = ((mean(pct_returns) - rf_daily) / std(pct_returns)) * sqrt(252)
-  //   rf_daily = annualRate / 252
-  //   std uses N-1 denominator (sample variance)
+  // Group FIFO matches by sell date to get daily realized P&L and capital deployed.
+  // Capital deployed per day = sum of (buyPrice * quantity) for all matches closing that day.
+  // Turnover per day = sum of ((buyPrice + sellPrice) * quantity) for charge distribution.
   const dailyPnL = new Map<string, number>()
   const dailyCapital = new Map<string, number>()
   const dailyTurnover = new Map<string, number>()
-  for (const t of trades) {
-    const cashFlow = t.tradeType === 'sell'
-      ? t.price * t.quantity
-      : -(t.price * t.quantity)
-    const turnover = t.price * t.quantity
-    dailyPnL.set(t.tradeDate, (dailyPnL.get(t.tradeDate) ?? 0) + cashFlow)
-    dailyTurnover.set(t.tradeDate, (dailyTurnover.get(t.tradeDate) ?? 0) + turnover)
-    if (t.tradeType === 'buy') {
-      dailyCapital.set(t.tradeDate, (dailyCapital.get(t.tradeDate) ?? 0) + t.price * t.quantity)
-    }
+
+  for (const m of fifoMatches) {
+    dailyPnL.set(m.sellDate, (dailyPnL.get(m.sellDate) ?? 0) + m.pnl)
+    dailyCapital.set(m.sellDate, (dailyCapital.get(m.sellDate) ?? 0) + m.buyPrice * m.quantity)
+    const matchTurnover = (m.buyPrice + m.sellPrice) * m.quantity
+    dailyTurnover.set(m.sellDate, (dailyTurnover.get(m.sellDate) ?? 0) + matchTurnover)
   }
 
   // Total turnover for charge distribution
   let totalTurnover = 0
   for (const v of dailyTurnover.values()) totalTurnover += v
 
-  // Compute percentage returns for all trading days using net P&L.
-  // For sell-only days (no buy capital), carry forward the most recent day's capital
-  // so that overnight swing trades (buy day 1, sell day 2) are properly accounted for.
+  // Compute percentage returns for each sell date with realized P&L.
   const sortedDates = Array.from(dailyPnL.keys()).sort()
   const returns: number[] = []
-  let carryCapital = 0
+
   for (const date of sortedDates) {
     const grossPnL = dailyPnL.get(date)!
-    // Distribute charges proportionally by daily turnover
     const dayTurnover = dailyTurnover.get(date) ?? 0
     const dayCharges = totalTurnover > 0 ? totalCharges * (dayTurnover / totalTurnover) : 0
     const netPnL = grossPnL - dayCharges
 
-    const dayCapital = dailyCapital.get(date) ?? 0
-    if (dayCapital > 0) {
-      carryCapital = dayCapital
-    }
-    const effectiveCapital = dayCapital > 0 ? dayCapital : carryCapital
-    if (effectiveCapital > 0) {
-      returns.push(netPnL / effectiveCapital)
+    const capital = dailyCapital.get(date) ?? 0
+    if (capital > 0) {
+      returns.push(netPnL / capital)
     }
   }
 
@@ -530,31 +508,25 @@ export function calculateMonthlyBreakdown(
     }
   }
 
-  const totalTrades = trades.length
-  // Allocate ALL charges (including DP) across months to match PnL file breakdown
+  // Allocate ALL charges across months proportionally by turnover (not trade count).
+  // This matches how charges actually accrue: STT, brokerage, exchange fees scale with trade value.
   const totalChargesAlloc = pnlSummary.charges.total
 
-  // Two maps serve two different purposes:
-  //
-  // symbolFirstMonth (min/open-month): maps each symbol to the month its
-  //   FIRST trade occurred. Used for win rate — answers "of positions I
-  //   entered this month, what fraction ended up profitable?"
-  //
-  // symbolCloseMonth (max/close-month): maps each symbol to the month its
-  //   LAST trade occurred (i.e., position close). Used for gross P&L
-  //   attribution — realized P&L is credited to the month it was realized.
-
-  // Build a map: symbol → first trade month (for win rate attribution)
-  const symbolFirstMonth = new Map<string, string>()
+  // Build monthly turnover map for charge allocation
+  const monthTurnoverMap = new Map<string, number>()
+  let totalTurnover = 0
   for (const t of trades) {
     const month = t.tradeDate.slice(0, 7)
-    const existing = symbolFirstMonth.get(t.symbol)
-    if (!existing || month < existing) {
-      symbolFirstMonth.set(t.symbol, month)
-    }
+    const turnover = t.price * t.quantity
+    monthTurnoverMap.set(month, (monthTurnoverMap.get(month) ?? 0) + turnover)
+    totalTurnover += turnover
   }
 
-  // Build a map: symbol → last trade month (for P&L attribution to close month)
+  // All monthly metrics use close-month (last trade date) cohort for consistency.
+  // This ensures win rate, P&L, drawdown, and expectancy in a row all describe
+  // the same set of positions — those that closed in that month.
+
+  // Build a map: symbol → last trade month (close month)
   const symbolCloseMonth = new Map<string, string>()
   for (const t of trades) {
     const month = t.tradeDate.slice(0, 7)
@@ -564,21 +536,7 @@ export function calculateMonthlyBreakdown(
     }
   }
 
-  // Group closed symbol P&L by their first-trade month (for win rate)
-  const monthSymbolPnL = new Map<string, SymbolPnL[]>()
-  for (const s of symbolPnL) {
-    if (s.openQuantity !== 0) continue // skip open positions
-    const month = symbolFirstMonth.get(s.symbol)
-    if (!month) continue
-    const bucket = monthSymbolPnL.get(month)
-    if (bucket) {
-      bucket.push(s)
-    } else {
-      monthSymbolPnL.set(month, [s])
-    }
-  }
-
-  // Group closed symbol P&L by their close-trade month (for gross P&L)
+  // Group closed symbol P&L by their close month (used for both win rate and gross P&L)
   const monthClosedPnL = new Map<string, SymbolPnL[]>()
   for (const s of symbolPnL) {
     if (s.openQuantity !== 0) continue // skip open positions
@@ -599,9 +557,11 @@ export function calculateMonthlyBreakdown(
   // Track cumulative P&L across months so each month's drawdown uses
   // month-start equity (capital + prior months' P&L) as baseline, not global capital.
   let priorCumulativePnL = 0
+  let allocatedCharges = 0
   const results: MonthlyMetric[] = []
 
-  for (const month of sortedMonths) {
+  for (let mi = 0; mi < sortedMonths.length; mi++) {
+    const month = sortedMonths[mi]
     const monthTrades = monthTradeMap.get(month)!
     const tradeCount = monthTrades.length
 
@@ -610,22 +570,27 @@ export function calculateMonthlyBreakdown(
     const closedSymbols = monthClosedPnL.get(month) ?? []
     const grossPnL = closedSymbols.reduce((sum, s) => sum + s.realizedPnL, 0)
 
-    // Proportional charge allocation
-    const charges = totalTrades > 0
-      ? (tradeCount / totalTrades) * totalChargesAlloc
-      : 0
+    // Turnover-based charge allocation with remainder on last month
+    let charges: number
+    if (mi === sortedMonths.length - 1) {
+      charges = totalChargesAlloc - allocatedCharges
+    } else {
+      const monthTurnover = monthTurnoverMap.get(month) ?? 0
+      charges = totalTurnover > 0 ? totalChargesAlloc * (monthTurnover / totalTurnover) : 0
+    }
+    allocatedCharges += charges
 
     const netPnL = grossPnL - charges
 
-    // Win rate from closed symbol P&L attributed to open month
-    const symbols = monthSymbolPnL.get(month) ?? []
-    const winners = symbols.filter((s) => s.realizedPnL > 0).length
-    const total = symbols.length
+    // Win rate from closed symbol P&L attributed to close month (same cohort as P&L)
+    const winners = closedSymbols.filter((s) => s.realizedPnL > 0).length
+    const total = closedSymbols.length
     const winRate = total > 0 ? (winners / total) * 100 : 0
 
-    // Per-month max drawdown using the high-water-mark algorithm.
+    // Per-month max drawdown using the high-water-mark algorithm on NET cumulative series.
     // Data source: SymbolPnL.realizedPnL for positions closing within this month,
     // distributed across sell dates via trade attributions for chronological accuracy.
+    // Charges deducted proportionally by turnover, consistent with overall drawdown.
     const rawMonthDateMap = buildDatePnLMap(closedSymbols, attributions)
     // Filter to only dates within this month (attributions may distribute across months)
     const monthDateMap = new Map<string, number>()
@@ -634,14 +599,16 @@ export function calculateMonthlyBreakdown(
         monthDateMap.set(date, pnl)
       }
     }
-    // Build cumulative series for the month and use shared HWM helper
-    const monthSortedDates = Array.from(monthDateMap.keys()).sort()
-    const monthCumulative: Array<{ date: string; value: number }> = []
-    let monthRunning = 0
-    for (const date of monthSortedDates) {
-      monthRunning += monthDateMap.get(date)!
-      monthCumulative.push({ date, value: monthRunning })
+    // Build net cumulative series using turnover-based charge distribution
+    const monthDateTurnover = buildDateTurnoverMap(closedSymbols, trades, attributions)
+    // Filter turnover map to this month's dates
+    const monthFilteredTurnover = new Map<string, number>()
+    for (const [date, turnover] of monthDateTurnover) {
+      if (date.startsWith(month)) {
+        monthFilteredTurnover.set(date, turnover)
+      }
     }
+    const monthCumulative = buildNetCumulativeSeries(monthDateMap, monthFilteredTurnover, charges)
     // Month-start equity = capital + prior months' cumulative P&L.
     // This ensures month 2's drawdown is relative to month-1-end equity,
     // not the original global capital.
@@ -652,8 +619,9 @@ export function calculateMonthlyBreakdown(
     const monthMaxDrawdown = monthDDResult.value
     const monthMaxDrawdownMode = monthDDResult.mode
 
-    // Accumulate this month's gross P&L for next month's baseline
-    priorCumulativePnL += grossPnL
+    // Accumulate this month's net P&L for next month's baseline.
+    // Uses net (after charges) so month-start equity reflects actual earnings.
+    priorCumulativePnL += netPnL
 
     results.push({
       month,
@@ -1015,17 +983,17 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
   const totalCharges = pnlSummary.charges.total
   const netPnL = pnlSummary.netPnL
 
+  // --- FIFO matching (needed by Sharpe, expectancy, streaks, risk-reward) ---
+  const fifoMatches = matchTradesWithPnL(trades)
+
   // --- Sprint 2 advanced analytics ---
   // Build trade attributions: distributes P&L across sell dates (not just last sell date)
   const tradeAttributions = buildTradeAttributions(trades)
-  const sharpeRatio = calculateSharpeRatio(trades, 0.02, totalCharges)
+  const sharpeRatio = calculateSharpeRatio(fifoMatches, 0.02, totalCharges)
   const maxDrawdown = calculateMaxDrawdown(symbolPnL, trades, initialCapital, tradeAttributions, totalCharges)
   const minDrawup = calculateMinDrawup(symbolPnL, trades, initialCapital, tradeAttributions, totalCharges)
   const streaks = calculateStreaks(symbolPnL, trades, tradeAttributions)
   const monthlyBreakdown = calculateMonthlyBreakdown(trades, pnlSummary, symbolPnL, initialCapital, tradeAttributions)
-
-  // --- Sprint 3 analytics ---
-  const fifoMatches = matchTradesWithPnL(trades)
   const expectancy = calculateExpectancy(fifoMatches)
   const riskReward = calculateRiskReward(fifoMatches)
   const rollingExpectancy = calculateRollingExpectancy(fifoMatches)

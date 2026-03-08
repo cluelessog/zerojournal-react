@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { Link } from 'react-router-dom'
-import type { SymbolPnL } from '@/lib/types'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { useUIStore } from '@/lib/store/ui-store'
 import { TradeFilters } from '@/components/trades/TradeFilters'
@@ -35,15 +34,11 @@ export default function TradesPage() {
     resetTradeFilters,
   } = useUIStore()
 
-  // Build symbolPnL map from portfolio store (snapshot)
-  const [symbolPnLMap, setSymbolPnLMap] = React.useState<Map<string, SymbolPnL>>(new Map())
-  React.useEffect(() => {
-    // Access symbolPnL directly from the snapshot via portfolio-store state
-    // The store doesn't expose symbolPnL directly, but it's in the snapshot.
-    // We'll derive it from the portfolio store by subscribing to it.
-    // For now, we use an empty map — symbolPnL detail comes from SymbolDetail.
-    setSymbolPnLMap(new Map())
-  }, [])
+  // Build symbolPnL map from portfolio store for authoritative realized P&L in SymbolDetail
+  const symbolPnLMap = React.useMemo(
+    () => new Map(symbolPnL.map((s) => [s.symbol, s])),
+    [symbolPnL],
+  )
 
   // Derive all unique symbols for the combobox
   const allSymbols = React.useMemo(

@@ -18,12 +18,17 @@ Where:
 
 ### Calculation Process
 
-1. **Daily Invested Capital**: For each trading day, sum `price × quantity` for all BUY trades
-2. **Charge Distribution**: Total charges (from `PnLSummary.charges.total`, excludes DP) distributed proportionally by daily turnover: `dayCharges = totalCharges × (dayTurnover / totalTurnover)`
-3. **Net Daily P&L**: `grossDailyPnL - dayCharges`
-4. **Daily Percentage Returns**: For each day with invested capital > 0, compute `netDailyPnL / daily_invested_capital`
-5. **Skip Sell-Only Days**: Days with no buy trades (and thus no invested capital) are excluded from the returns series
-6. **Sharpe Calculation**: Apply the formula above to the net percentage returns array
+1. **FIFO Matching**: Match buy and sell trades using FIFO to get realized P&L per position close.
+2. **Daily Realized P&L**: Group FIFO matches by sell date, sum realized P&L per date.
+3. **Daily Capital Deployed**: For each sell date, sum `buyPrice × quantity` of all matches closing that day.
+4. **Charge Distribution**: Total charges distributed proportionally by daily turnover: `dayCharges = totalCharges × (dayTurnover / totalTurnover)`.
+5. **Net Daily P&L**: `grossDailyPnL - dayCharges`.
+6. **Daily Percentage Returns**: For each sell date with capital > 0, compute `netDailyPnL / dailyCapitalDeployed`.
+7. **Sharpe Calculation**: Apply the formula above to the net percentage returns array.
+
+Note: Prior versions used raw buy/sell cashflows which produced impossible daily returns
+for swing trades (e.g., buy day 1 = -100%, sell day 2 = +110%). The FIFO-match approach
+correctly attributes realized P&L to the sell date only.
 
 ### Edge Cases
 
@@ -75,7 +80,7 @@ Where:
 
 Same algorithm, but applied to each calendar month independently:
 - Extract closed positions whose close month is this month
-- Build cumulative P&L from `SymbolPnL.realizedPnL` within the month (per-trade attribution, filtered to month dates)
+- Build net cumulative P&L from `SymbolPnL.realizedPnL` within the month, with turnover-proportional charges deducted (same fee model as overall drawdown)
 - Apply the high-water-mark algorithm with month-start equity (capital + prior months' cumulative P&L) as baseline
 - Return the month's maximum drawdown
 
@@ -111,6 +116,10 @@ Where:
 - Losing trade = realized P&L < 0
 - Breakeven trade = realized P&L === 0 (counted separately)
 
+### Monthly Win Rate
+
+Monthly win rate uses **close-month** cohort: a position is counted in the month its last sell trade occurred. This ensures all metrics in a monthly row (win rate, P&L, drawdown, expectancy) describe the same set of positions.
+
 ## Gross P&L vs Net P&L
 
 - **Gross P&L**: Total realized P&L from all closed positions
@@ -119,7 +128,7 @@ Where:
 
 ### Charge Distribution
 
-All metrics that use daily P&L (Sharpe ratio, max drawdown, min drawup, P&L timeline) distribute total charges proportionally by **turnover**:
+All metrics that use daily P&L (Sharpe ratio, max drawdown, min drawup, P&L timeline, monthly breakdown) distribute total charges proportionally by **turnover**:
 
 ```
 dayCharges = totalCharges × (dayTurnover / totalTurnover)
@@ -137,6 +146,6 @@ The equity curve defaults to **Net P&L** (after charges). A Gross/Net toggle all
 
 ---
 
-**Version**: 1.1
-**Last Updated**: 2026-03-07
+**Version**: 1.2
+**Last Updated**: 2026-03-08
 **Author**: zeroJournal Development Team
