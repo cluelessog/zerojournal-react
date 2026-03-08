@@ -8,8 +8,20 @@ export interface CumulativeMetricsPoint {
   cumulativeExpectancy: number
 }
 
+/** Cap for profit factor and risk-reward to prevent Y-axis distortion */
+const RATIO_CAP = 5
+
 export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetricsPoint[] {
   if (matches.length === 0) return []
+
+  // Sort chronologically by (sellDate, symbol, buyDate) to interleave
+  // same-date matches across symbols, avoiding single-symbol cluster bias
+  const sorted = [...matches].sort((a, b) => {
+    if (a.sellDate !== b.sellDate) return a.sellDate < b.sellDate ? -1 : 1
+    if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1
+    if (a.buyDate !== b.buyDate) return a.buyDate < b.buyDate ? -1 : 1
+    return 0
+  })
 
   const points: CumulativeMetricsPoint[] = []
   let wins = 0
@@ -18,40 +30,41 @@ export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetr
   let sumLossPnL = 0
   let totalPnL = 0
 
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i]
+  for (let i = 0; i < sorted.length; i++) {
+    const m = sorted[i]
     totalPnL += m.pnl
 
     if (m.pnl > 0) {
       wins++
       sumWinPnL += m.pnl
-    } else {
+    } else if (m.pnl < 0) {
       losses++
       sumLossPnL += Math.abs(m.pnl)
     }
+    // pnl === 0: breakeven, excluded from win/loss tallies
 
     const total = wins + losses
-    const cumulativeWinRate = (wins / total) * 100
+    const cumulativeWinRate = total > 0 ? (wins / total) * 100 : 0
 
     let cumulativeProfitFactor: number
     if (sumLossPnL === 0) {
-      cumulativeProfitFactor = sumWinPnL > 0 ? 999 : 0
+      cumulativeProfitFactor = sumWinPnL > 0 ? RATIO_CAP : 0
     } else {
-      cumulativeProfitFactor = sumWinPnL / sumLossPnL
+      cumulativeProfitFactor = Math.min(sumWinPnL / sumLossPnL, RATIO_CAP)
     }
 
     let cumulativeRiskReward: number
     if (wins === 0) {
       cumulativeRiskReward = 0
     } else if (losses === 0) {
-      cumulativeRiskReward = 999
+      cumulativeRiskReward = RATIO_CAP
     } else {
       const avgWin = sumWinPnL / wins
       const avgLoss = sumLossPnL / losses
-      cumulativeRiskReward = avgWin / avgLoss
+      cumulativeRiskReward = Math.min(avgWin / avgLoss, RATIO_CAP)
     }
 
-    const cumulativeExpectancy = totalPnL / total
+    const cumulativeExpectancy = total > 0 ? totalPnL / total : 0
 
     points.push({
       tradeIndex: i + 1,

@@ -43,8 +43,8 @@ const CHARTS: ChartConfig[] = [
     color: '#3b82f6',
     refLine: 1,
     refLabel: '1.0',
-    yFormat: (v) => v >= 100 ? '∞' : v.toFixed(1),
-    tooltipFormat: (v) => v >= 999 ? '∞' : v.toFixed(2),
+    yFormat: (v) => v.toFixed(1),
+    tooltipFormat: (v) => v.toFixed(2),
   },
   {
     title: 'Cumulative Risk-Reward',
@@ -52,8 +52,8 @@ const CHARTS: ChartConfig[] = [
     color: '#8b5cf6',
     refLine: 1,
     refLabel: '1.0',
-    yFormat: (v) => v >= 100 ? '∞' : v.toFixed(1),
-    tooltipFormat: (v) => v >= 999 ? '∞' : v.toFixed(2),
+    yFormat: (v) => v.toFixed(1),
+    tooltipFormat: (v) => v.toFixed(2),
   },
   {
     title: 'Cumulative Expectancy',
