@@ -11,7 +11,13 @@ export interface CumulativeMetricsPoint {
 export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetricsPoint[] {
   if (matches.length === 0) return []
 
-  const points: CumulativeMetricsPoint[] = []
+  const points: CumulativeMetricsPoint[] = [{
+    tradeIndex: 0,
+    cumulativeWinRate: 0,
+    cumulativeProfitFactor: 0,
+    cumulativeRiskReward: 0,
+    cumulativeExpectancy: 0,
+  }]
   let wins = 0
   let losses = 0
   let sumWinPnL = 0
