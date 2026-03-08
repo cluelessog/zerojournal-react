@@ -878,6 +878,61 @@ export interface AnalyticsInput {
   orderGroups: OrderGroup[]
 }
 
+// ─── Streaks by Trading Style ────────────────────────────────────────────────
+
+export interface StyleStreakResult {
+  overall: StreakMetric
+  intraday: StreakMetric | null
+  swing: StreakMetric | null
+}
+
+function computeStreaksFromMatches(matches: FIFOMatch[]): StreakMetric {
+  const empty: StreakMetric = {
+    longestWinStreak: 0,
+    longestLossStreak: 0,
+    currentStreak: { type: 'win', count: 0 },
+  }
+  if (matches.length === 0) return empty
+
+  let longestWin = 0
+  let longestLoss = 0
+  let currentType: 'win' | 'loss' = matches[0].pnl > 0 ? 'win' : 'loss'
+  let currentCount = 0
+
+  for (const m of matches) {
+    const type: 'win' | 'loss' = m.pnl > 0 ? 'win' : 'loss'
+    if (type === currentType) {
+      currentCount++
+    } else {
+      currentType = type
+      currentCount = 1
+    }
+    if (currentType === 'win' && currentCount > longestWin) longestWin = currentCount
+    if (currentType === 'loss' && currentCount > longestLoss) longestLoss = currentCount
+  }
+
+  return {
+    longestWinStreak: longestWin,
+    longestLossStreak: longestLoss,
+    currentStreak: { type: currentType, count: currentCount },
+  }
+}
+
+export function calculateStreaksByStyle(
+  fifoMatches: FIFOMatch[],
+  minTradesForStyleStreak: number = 20,
+): StyleStreakResult {
+  const sorted = [...fifoMatches].sort((a, b) => a.sellDate.localeCompare(b.sellDate))
+  const intraday = sorted.filter((m) => m.holdingDays === 0)
+  const swing = sorted.filter((m) => m.holdingDays > 0)
+
+  return {
+    overall: computeStreaksFromMatches(sorted),
+    intraday: intraday.length >= minTradesForStyleStreak ? computeStreaksFromMatches(intraday) : null,
+    swing: swing.length >= minTradesForStyleStreak ? computeStreaksFromMatches(swing) : null,
+  }
+}
+
 /**
  * Compute portfolio-level analytics from raw inputs.
  *

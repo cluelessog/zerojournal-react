@@ -11,6 +11,7 @@ import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
 import { CapitalInput } from '@/components/dashboard/CapitalInput'
 import { KeyInsights } from '@/components/dashboard/KeyInsights'
 import { generateInsights } from '@/lib/engine/insights'
+import { calculateStreaksByStyle } from '@/lib/engine/analytics'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const PnLTimelineChart = lazy(() =>
@@ -31,6 +32,18 @@ const TradingCalendar = lazy(() =>
 const RollingExpectancyChart = lazy(() =>
   import('@/components/dashboard/RollingExpectancyChart').then((m) => ({ default: m.RollingExpectancyChart }))
 )
+const CumulativeMetricsGrid = lazy(() =>
+  import('@/components/dashboard/CumulativeMetricsGrid').then((m) => ({ default: m.CumulativeMetricsGrid }))
+)
+const HoldingPeriodChart = lazy(() =>
+  import('@/components/dashboard/HoldingPeriodChart').then((m) => ({ default: m.HoldingPeriodChart }))
+)
+const DurationDistributionChart = lazy(() =>
+  import('@/components/dashboard/DurationDistributionChart').then((m) => ({ default: m.DurationDistributionChart }))
+)
+const PnLBarCharts = lazy(() =>
+  import('@/components/dashboard/PnLBarCharts').then((m) => ({ default: m.PnLBarCharts }))
+)
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -46,6 +59,11 @@ export default function DashboardPage() {
   const insights = useMemo(() => {
     if (!analytics) return []
     return generateInsights(analytics)
+  }, [analytics])
+
+  const styleStreaks = useMemo(() => {
+    if (!analytics) return null
+    return calculateStreaksByStyle(analytics.fifoMatches)
   }, [analytics])
 
   const monthTradeCounts = useMemo(() => {
@@ -103,6 +121,13 @@ export default function DashboardPage() {
               </Suspense>
             </ChartErrorBoundary>
 
+            {/* P&L by Period (horizontal bars) */}
+            <ChartErrorBoundary chartName="P&L by Period">
+              <Suspense fallback={<ChartSkeleton height={400} />}>
+                <PnLBarCharts trades={trades} symbolPnL={symbolPnL} />
+              </Suspense>
+            </ChartErrorBoundary>
+
             {/* Row 4: Win/Loss Distribution + Monthly Volume (side by side) */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <ChartErrorBoundary chartName="Win/Loss Distribution">
@@ -120,7 +145,7 @@ export default function DashboardPage() {
             {/* Row 5: Top Symbols (full width) */}
             <ChartErrorBoundary chartName="Top Symbols">
               <Suspense fallback={<ChartSkeleton height={350} />}>
-                <TopSymbolsChart symbolPnL={symbolPnL} />
+                <TopSymbolsChart symbolPnL={symbolPnL} fifoMatches={analytics.fifoMatches} />
               </Suspense>
             </ChartErrorBoundary>
 
@@ -233,6 +258,57 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Row 2b: Streaks by Trading Style */}
+            {styleStreaks && (styleStreaks.intraday || styleStreaks.swing) ? (
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">By Trading Style</h4>
+                {styleStreaks.intraday && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-gray-500">Intraday</p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Longest Win</div>
+                        <div className="mt-0.5 text-lg font-bold text-green-600">{styleStreaks.intraday.longestWinStreak}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Longest Loss</div>
+                        <div className="mt-0.5 text-lg font-bold text-red-600">{styleStreaks.intraday.longestLossStreak}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Current</div>
+                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.intraday.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'}`}>
+                          {styleStreaks.intraday.currentStreak.count} {styleStreaks.intraday.currentStreak.type === 'win' ? 'W' : 'L'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {styleStreaks.swing && (
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-gray-500">Swing</p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Longest Win</div>
+                        <div className="mt-0.5 text-lg font-bold text-green-600">{styleStreaks.swing.longestWinStreak}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Longest Loss</div>
+                        <div className="mt-0.5 text-lg font-bold text-red-600">{styleStreaks.swing.longestLossStreak}</div>
+                      </div>
+                      <div className="rounded-lg border p-3">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Current</div>
+                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.swing.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'}`}>
+                          {styleStreaks.swing.currentStreak.count} {styleStreaks.swing.currentStreak.type === 'win' ? 'W' : 'L'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : styleStreaks && !styleStreaks.intraday && !styleStreaks.swing ? (
+              <p className="text-xs text-gray-500">Not enough trades per style (need 20+)</p>
+            ) : null}
+
             {/* Row 3: Expectancy + Risk-Reward Cards */}
             <ExpectancyCards
               expectancy={analytics.expectancy}
@@ -324,6 +400,27 @@ export default function DashboardPage() {
                 <RollingExpectancyChart data={analytics.rollingExpectancy} />
               </Suspense>
             </ChartErrorBoundary>
+
+            {/* Cumulative Metrics Evolution (4-grid) */}
+            <ChartErrorBoundary chartName="Cumulative Metrics">
+              <Suspense fallback={<ChartSkeleton height={500} />}>
+                <CumulativeMetricsGrid fifoMatches={analytics.fifoMatches} />
+              </Suspense>
+            </ChartErrorBoundary>
+
+            {/* Holding Period + Duration Distribution (side-by-side) */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <ChartErrorBoundary chartName="Holding Period">
+                <Suspense fallback={<ChartSkeleton height={350} />}>
+                  <HoldingPeriodChart fifoMatches={analytics.fifoMatches} />
+                </Suspense>
+              </ChartErrorBoundary>
+              <ChartErrorBoundary chartName="Duration Distribution">
+                <Suspense fallback={<ChartSkeleton height={350} />}>
+                  <DurationDistributionChart fifoMatches={analytics.fifoMatches} />
+                </Suspense>
+              </ChartErrorBoundary>
+            </div>
           </div>
         </TabsContent>
 

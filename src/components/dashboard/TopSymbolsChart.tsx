@@ -11,18 +11,36 @@ import {
   ReferenceLine,
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import type { SymbolPnL } from '@/lib/types'
+import type { SymbolPnL, FIFOMatch } from '@/lib/types'
 
 interface TopSymbolsChartProps {
   symbolPnL: SymbolPnL[]
+  fifoMatches?: FIFOMatch[]
 }
 
 interface SymbolEntry {
   symbol: string
   pnl: number
+  winRate: number | null
 }
 
-export function TopSymbolsChart({ symbolPnL }: TopSymbolsChartProps) {
+export function TopSymbolsChart({ symbolPnL, fifoMatches }: TopSymbolsChartProps) {
+  const winRateMap = useMemo(() => {
+    if (!fifoMatches || fifoMatches.length === 0) return new Map<string, number>()
+    const groups = new Map<string, { wins: number; total: number }>()
+    for (const m of fifoMatches) {
+      const entry = groups.get(m.symbol) ?? { wins: 0, total: 0 }
+      entry.total++
+      if (m.pnl > 0) entry.wins++
+      groups.set(m.symbol, entry)
+    }
+    const result = new Map<string, number>()
+    for (const [symbol, { wins, total }] of groups) {
+      result.set(symbol, (wins / total) * 100)
+    }
+    return result
+  }, [fifoMatches])
+
   const data = useMemo(() => {
     // Only closed positions
     const closed = symbolPnL.filter((s) => s.openQuantity === 0)
@@ -36,12 +54,12 @@ export function TopSymbolsChart({ symbolPnL }: TopSymbolsChartProps) {
 
     // Combine: worst first (bottom), then best (top) for visual layout
     const combined: SymbolEntry[] = [
-      ...worst5.map((s) => ({ symbol: s.symbol, pnl: Math.round(s.realizedPnL * 100) / 100 })),
-      ...best5.map((s) => ({ symbol: s.symbol, pnl: Math.round(s.realizedPnL * 100) / 100 })),
+      ...worst5.map((s) => ({ symbol: s.symbol, pnl: Math.round(s.realizedPnL * 100) / 100, winRate: winRateMap.get(s.symbol) ?? null })),
+      ...best5.map((s) => ({ symbol: s.symbol, pnl: Math.round(s.realizedPnL * 100) / 100, winRate: winRateMap.get(s.symbol) ?? null })),
     ]
 
     return combined
-  }, [symbolPnL])
+  }, [symbolPnL, winRateMap])
 
   return (
     <Card>
@@ -84,6 +102,9 @@ export function TopSymbolsChart({ symbolPnL }: TopSymbolsChartProps) {
                       <p className={d.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
                         Rs. {d.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </p>
+                      {d.winRate != null && (
+                        <p className="text-muted-foreground">Win Rate: {d.winRate.toFixed(1)}%</p>
+                      )}
                     </div>
                   )
                 }}
