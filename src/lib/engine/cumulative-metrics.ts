@@ -8,8 +8,18 @@ export interface CumulativeMetricsPoint {
   cumulativeExpectancy: number
 }
 
+/** Cap for profit factor and risk-reward to prevent Y-axis distortion */
+const RATIO_CAP = 5
+
 export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetricsPoint[] {
   if (matches.length === 0) return []
+
+  // Sort chronologically by sell date so cumulative curves reflect the trading journey
+  const sorted = [...matches].sort((a, b) => {
+    if (a.sellDate !== b.sellDate) return a.sellDate < b.sellDate ? -1 : 1
+    if (a.buyDate !== b.buyDate) return a.buyDate < b.buyDate ? -1 : 1
+    return 0
+  })
 
   const points: CumulativeMetricsPoint[] = [{
     tradeIndex: 0,
@@ -24,8 +34,8 @@ export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetr
   let sumLossPnL = 0
   let totalPnL = 0
 
-  for (let i = 0; i < matches.length; i++) {
-    const m = matches[i]
+  for (let i = 0; i < sorted.length; i++) {
+    const m = sorted[i]
     totalPnL += m.pnl
 
     if (m.pnl > 0) {
@@ -41,20 +51,20 @@ export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetr
 
     let cumulativeProfitFactor: number
     if (sumLossPnL === 0) {
-      cumulativeProfitFactor = sumWinPnL > 0 ? 999 : 0
+      cumulativeProfitFactor = sumWinPnL > 0 ? RATIO_CAP : 0
     } else {
-      cumulativeProfitFactor = sumWinPnL / sumLossPnL
+      cumulativeProfitFactor = Math.min(sumWinPnL / sumLossPnL, RATIO_CAP)
     }
 
     let cumulativeRiskReward: number
     if (wins === 0) {
       cumulativeRiskReward = 0
     } else if (losses === 0) {
-      cumulativeRiskReward = 999
+      cumulativeRiskReward = RATIO_CAP
     } else {
       const avgWin = sumWinPnL / wins
       const avgLoss = sumLossPnL / losses
-      cumulativeRiskReward = avgWin / avgLoss
+      cumulativeRiskReward = Math.min(avgWin / avgLoss, RATIO_CAP)
     }
 
     const cumulativeExpectancy = totalPnL / total

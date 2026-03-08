@@ -33,13 +33,13 @@ describe('calculateCumulativeMetrics', () => {
     expect(result[0]).toEqual(BASELINE)
   })
 
-  it('single winning trade: baseline + winRate=100, profitFactor=999(capped), expectancy=pnl', () => {
+  it('single winning trade: baseline + winRate=100, profitFactor=5(capped), expectancy=pnl', () => {
     const result = calculateCumulativeMetrics([makeMatch(500)])
     expect(result).toHaveLength(2)
     expect(result[0]).toEqual(BASELINE)
     expect(result[1].tradeIndex).toBe(1)
     expect(result[1].cumulativeWinRate).toBe(100)
-    expect(result[1].cumulativeProfitFactor).toBe(999)
+    expect(result[1].cumulativeProfitFactor).toBe(5)
     expect(result[1].cumulativeExpectancy).toBe(500)
   })
 
@@ -94,8 +94,8 @@ describe('calculateCumulativeMetrics', () => {
     const matches = [makeMatch(400), makeMatch(-200)]
     const result = calculateCumulativeMetrics(matches)
     expect(result[0]).toEqual(BASELINE)
-    // After trade 1: PF = 999 (capped, no losses)
-    expect(result[1].cumulativeProfitFactor).toBe(999)
+    // After trade 1: PF = 5 (capped, no losses)
+    expect(result[1].cumulativeProfitFactor).toBe(5)
     // After trade 2: PF = 400 / 200 = 2.0
     expect(result[2].cumulativeProfitFactor).toBeCloseTo(2.0, 2)
   })
