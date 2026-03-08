@@ -115,6 +115,39 @@ describe('calculateSharpeRatio', () => {
     expect(typeof sharpe).toBe('number')
     expect(isNaN(sharpe)).toBe(false)
   })
+
+  it('overnight swing trade does not produce impossible daily returns', () => {
+    // Buy on Day 1, sell on Day 2 at 10% profit.
+    // Old cashflow approach: Day 1 return = -100%, Day 2 return = +110% (impossible)
+    // FIFO approach: single realized return of +10% attributed to sell date only.
+    const trades = [
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10, orderExecutionTime: '2025-01-01T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 110, quantity: 10, orderExecutionTime: '2025-01-02T15:00:00' }),
+    ]
+    const matches = matchTradesWithPnL(trades)
+    // Should produce exactly 1 match on sellDate 2025-01-02
+    expect(matches).toHaveLength(1)
+    expect(matches[0].sellDate).toBe('2025-01-02')
+    expect(matches[0].pnl).toBe(100) // (110 - 100) * 10
+    // Sharpe with single sell date → returns 0 (needs ≥ 2 data points)
+    expect(calculateSharpeRatio(matches)).toBe(0)
+  })
+
+  it('staggered partial exits produce stable realized returns', () => {
+    // Buy 30 shares on Day 1, sell 10 each on Day 2, 3, 4 at increasing prices
+    const trades = [
+      makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 30, orderExecutionTime: '2025-01-01T09:00:00' }),
+      makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 105, quantity: 10, orderExecutionTime: '2025-01-02T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-03', tradeType: 'sell', price: 110, quantity: 10, orderExecutionTime: '2025-01-03T15:00:00' }),
+      makeTrade({ tradeDate: '2025-01-04', tradeType: 'sell', price: 115, quantity: 10, orderExecutionTime: '2025-01-04T15:00:00' }),
+    ]
+    const matches = matchTradesWithPnL(trades)
+    expect(matches).toHaveLength(3)
+    // Each match has realized P&L: (105-100)*10=50, (110-100)*10=100, (115-100)*10=150
+    const sharpe = calculateSharpeRatio(matches)
+    expect(sharpe).toBeGreaterThan(0) // all profitable
+    expect(isFinite(sharpe)).toBe(true)
+  })
 })
 
 // ─── US-009: Max Drawdown & Min Drawup ────────────────────────────────────────
@@ -647,16 +680,43 @@ describe('calculateMonthlyBreakdown', () => {
     expect(result[0].winRate).toBeCloseTo(50)
   })
 
-  it('charges allocation is proportional to trade count', () => {
-    // 2 trades in Jan, 8 trades in Feb → Jan gets 20%, Feb 80%
-    const janTrades = makeTradesFromPnLs([100], '2025-01-15')         // 2 trades
-    const febTrades = makeTradesFromPnLs([100, 100, 100, 100], '2025-02-15') // 8 trades
+  it('cross-month position: win rate uses close-month, not open-month', () => {
+    // Position opened in January, closed in February
+    // Should appear in February's win rate (close-month), NOT January's
+    const trades: RawTrade[] = [
+      makeTrade({ tradeDate: '2025-01-15', tradeType: 'buy', price: 100, quantity: 10, symbol: 'CROSS' }),
+      makeTrade({ tradeDate: '2025-02-10', tradeType: 'sell', price: 120, quantity: 10, symbol: 'CROSS' }),
+    ]
+    const symbolPnL = [makeSymbolPnL('CROSS', 200)]
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
+
+    const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
+
+    expect(result).toHaveLength(2) // Jan (buy only) and Feb (sell)
+    // January: trades exist but no positions close → win rate = 0, grossPnL = 0
+    expect(result[0].month).toBe('2025-01')
+    expect(result[0].winRate).toBe(0)
+    expect(result[0].grossPnL).toBe(0)
+    // February: position closes here → win rate = 100%, grossPnL = 200
+    expect(result[1].month).toBe('2025-02')
+    expect(result[1].winRate).toBe(100)
+    expect(result[1].grossPnL).toBe(200)
+  })
+
+  it('charges allocation is proportional to turnover', () => {
+    // Jan: 1 pnl → 2 trades (buy@100*10=1000, sell@110*10=1100) → turnover=2100
+    // Feb: 4 pnls → 8 trades, each buy@100*10 + sell@(100+pnl/10)*10 → turnover≈8400
+    // Charges distributed by turnover ratio, not trade count
+    const janTrades = makeTradesFromPnLs([100], '2025-01-15')
+    const febTrades = makeTradesFromPnLs([100, 100, 100, 100], '2025-02-15')
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 1000 } })
 
     const result = calculateMonthlyBreakdown([...janTrades, ...febTrades], summary)
 
-    expect(result[0].charges).toBeCloseTo(200)   // 2/10 * 1000
-    expect(result[1].charges).toBeCloseTo(800)   // 8/10 * 1000
+    // Sum must equal total charges exactly
+    expect(result[0].charges + result[1].charges).toBeCloseTo(1000, 10)
+    // Feb has ~4x the turnover of Jan, so it gets ~4x the charges
+    expect(result[1].charges).toBeGreaterThan(result[0].charges * 3)
   })
 })
 

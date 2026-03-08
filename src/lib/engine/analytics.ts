@@ -619,8 +619,9 @@ export function calculateMonthlyBreakdown(
     const monthMaxDrawdown = monthDDResult.value
     const monthMaxDrawdownMode = monthDDResult.mode
 
-    // Accumulate this month's gross P&L for next month's baseline
-    priorCumulativePnL += grossPnL
+    // Accumulate this month's net P&L for next month's baseline.
+    // Uses net (after charges) so month-start equity reflects actual earnings.
+    priorCumulativePnL += netPnL
 
     results.push({
       month,
