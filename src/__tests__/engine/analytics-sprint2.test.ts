@@ -9,6 +9,7 @@ import {
   computeAnalytics,
 } from '@/lib/engine/analytics'
 import type { RawTrade, PnLSummary, ChargesBreakdown, SymbolPnL, OrderGroup } from '@/lib/types'
+import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -48,44 +49,50 @@ function makeTradesFromPnLs(pnls: number[], startDate = '2025-01-01'): RawTrade[
   return trades
 }
 
+/** Convenience wrapper: converts RawTrade[] → FIFOMatch[] → calculateSharpeRatio */
+function sharpeFromTrades(trades: RawTrade[], riskFreeRate?: number, totalCharges?: number): number {
+  const matches = matchTradesWithPnL(trades)
+  return calculateSharpeRatio(matches, riskFreeRate, totalCharges)
+}
+
 // ─── US-008: Sharpe Ratio ─────────────────────────────────────────────────────
 
 describe('calculateSharpeRatio', () => {
   it('returns 0 for empty trades', () => {
-    expect(calculateSharpeRatio([])).toBe(0)
+    expect(sharpeFromTrades([])).toBe(0)
   })
 
   it('returns 0 for single trade', () => {
     const t = makeTrade({ tradeDate: '2025-01-01', tradeType: 'sell', price: 110, quantity: 10 })
-    expect(calculateSharpeRatio([t])).toBe(0)
+    expect(sharpeFromTrades([t])).toBe(0)
   })
 
   it('returns 0 when all daily returns are identical (zero std dev)', () => {
     // Same net P&L every day → std dev = 0
     const trades = makeTradesFromPnLs([100, 100, 100, 100, 100])
-    expect(calculateSharpeRatio(trades)).toBe(0)
+    expect(sharpeFromTrades(trades)).toBe(0)
   })
 
   it('returns positive Sharpe for consistent profitable trades', () => {
     // 10 days of positive, varying returns → mean >> rfr, low variance
     const pnls = [200, 250, 180, 220, 210, 230, 190, 240, 200, 215]
     const trades = makeTradesFromPnLs(pnls)
-    const sharpe = calculateSharpeRatio(trades)
+    const sharpe = sharpeFromTrades(trades)
     expect(sharpe).toBeGreaterThan(0)
   })
 
   it('returns negative Sharpe for consistent losing trades', () => {
     const pnls = [-200, -180, -220, -190, -210]
     const trades = makeTradesFromPnLs(pnls)
-    const sharpe = calculateSharpeRatio(trades)
+    const sharpe = sharpeFromTrades(trades)
     expect(sharpe).toBeLessThan(0)
   })
 
   it('uses custom risk-free rate parameter', () => {
     const pnls = [500, 600, 550, 520, 580, 610, 530, 490, 570, 560]
     const trades = makeTradesFromPnLs(pnls)
-    const sharpe0 = calculateSharpeRatio(trades, 0)
-    const sharpe5 = calculateSharpeRatio(trades, 0.05)
+    const sharpe0 = sharpeFromTrades(trades, 0)
+    const sharpe5 = sharpeFromTrades(trades, 0.05)
     // Higher risk-free rate → lower Sharpe
     expect(sharpe0).toBeGreaterThan(sharpe5)
   })
@@ -93,8 +100,8 @@ describe('calculateSharpeRatio', () => {
   it('returns lower Sharpe for high-volatility returns', () => {
     const lowVol = makeTradesFromPnLs([100, 105, 95, 110, 90, 102, 98, 108, 97, 103])
     const highVol = makeTradesFromPnLs([500, -300, 400, -200, 350, -250, 450, -150, 300, -100])
-    const sharpeLow = calculateSharpeRatio(lowVol)
-    const sharpeHigh = calculateSharpeRatio(highVol)
+    const sharpeLow = sharpeFromTrades(lowVol)
+    const sharpeHigh = sharpeFromTrades(highVol)
     expect(sharpeLow).toBeGreaterThan(sharpeHigh)
   })
 
@@ -103,7 +110,7 @@ describe('calculateSharpeRatio', () => {
       makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 100, quantity: 10 }),
       makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 110, quantity: 10 }),
     ]
-    const sharpe = calculateSharpeRatio(trades)
+    const sharpe = sharpeFromTrades(trades)
     // 2 days, valid result (not NaN)
     expect(typeof sharpe).toBe('number')
     expect(isNaN(sharpe)).toBe(false)
@@ -252,7 +259,7 @@ describe('calculateMaxDrawdown', () => {
       makeSymbolPnL('DD0', -300),
       makeSymbolPnL('DD1', -200),
     ]
-    const summary = makePnLSummary()
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
     // Monthly drawdown should be negative (absolute INR) instead of 0
@@ -262,13 +269,14 @@ describe('calculateMaxDrawdown', () => {
 
   it('monthly and overall drawdown use same algorithm (consistent results)', () => {
     // Single month with all trades, results should match
+    // Use zero charges so both paths compute gross drawdown for comparison
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 1000, closeDateOffset: 0 },
       { pnl: -500, closeDateOffset: 1 },
       { pnl: 200, closeDateOffset: 2 },
     ])
     const overallResult = calculateMaxDrawdown(symbolPnL, trades)
-    const summary = makePnLSummary()
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const monthlyResult = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     // All trades are in the same month, so monthly drawdown should equal overall
     expect(monthlyResult).toHaveLength(1)
@@ -598,9 +606,12 @@ describe('calculateMonthlyBreakdown', () => {
     expect(result[0].month).toBe('2025-01')
     expect(result[1].month).toBe('2025-02')
 
-    // Proportional charges: Jan = 4/10 * 100 = 40, Feb = 6/10 * 100 = 60
-    expect(result[0].charges).toBeCloseTo(40)
-    expect(result[1].charges).toBeCloseTo(60)
+    // Turnover-based charges: Jan turnover≈4300, Feb turnover≈6250, total≈10550
+    // Jan = 100 * 4300/10550 ≈ 40.76, Feb = remainder ≈ 59.24
+    expect(result[0].charges).toBeCloseTo(40.76, 0)
+    expect(result[1].charges).toBeCloseTo(59.24, 0)
+    // Sum must equal total charges exactly
+    expect(result[0].charges + result[1].charges).toBeCloseTo(100, 10)
   })
 
   it('month with no trades does not appear in output', () => {
@@ -804,7 +815,7 @@ describe('calculateSharpeRatio — extended validation', () => {
       trades.push(makeTrade({ tradeDate: date, tradeType: 'sell', price: 502, quantity: 100, orderExecutionTime: `${date}T15:00:00` }))
     }
     // All daily returns = 0.004, std dev = 0 → Sharpe = 0
-    expect(calculateSharpeRatio(trades)).toBe(0)
+    expect(sharpeFromTrades(trades)).toBe(0)
   })
 
   // Test 2: 500x distortion prevention — verify percentage-return methodology
@@ -819,7 +830,7 @@ describe('calculateSharpeRatio — extended validation', () => {
       makeTrade({ tradeDate: '2025-01-02', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-02T09:00:00' }),
       makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 503, quantity: 100, orderExecutionTime: '2025-01-02T15:00:00' }),
     ]
-    const sharpe = calculateSharpeRatio(trades)
+    const sharpe = sharpeFromTrades(trades)
     // Pct returns: [0.004, 0.006]. If distorted (raw PnL), Sharpe would be enormous.
     // With pct-return methodology, mean≈0.005, std≈0.00141, Sharpe≈(0.005/0.00141)*sqrt(252)≈56
     // Key check: Sharpe is a finite reasonable number, NOT thousands (which raw PnL would produce)
@@ -847,20 +858,20 @@ describe('calculateSharpeRatio — extended validation', () => {
       makeTrade({ tradeDate: '2025-02-02', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-02-02T09:00:00' }),
       makeTrade({ tradeDate: '2025-02-02', tradeType: 'sell', price: 485, quantity: 100, orderExecutionTime: '2025-02-02T15:00:00' }),
     ]
-    expect(calculateSharpeRatio(tradesVarying)).toBeLessThan(0)
+    expect(sharpeFromTrades(tradesVarying)).toBeLessThan(0)
   })
 
   // Test 4: Zero standard deviation — already covered by existing test, add precision check
   it('zero std dev: 5 days with identical pct returns → Sharpe = 0', () => {
     // 5 days buy 10@100 sell@110 → same return each day → std=0
     const trades = makeTradesFromPnLs([100, 100, 100, 100, 100])
-    expect(calculateSharpeRatio(trades)).toBe(0)
+    expect(sharpeFromTrades(trades)).toBe(0)
   })
 
   // Test 5: Single trade — already tested, confirm explicitly
   it('single buy trade: returns 0 (fewer than 2 trades)', () => {
     const t = makeTrade({ tradeDate: '2025-01-01', tradeType: 'buy', price: 500, quantity: 10 })
-    expect(calculateSharpeRatio([t])).toBe(0)
+    expect(sharpeFromTrades([t])).toBe(0)
   })
 
   // Test 6: Sell-only day skipping
@@ -873,15 +884,15 @@ describe('calculateSharpeRatio — extended validation', () => {
       makeTrade({ tradeDate: '2025-01-02', tradeType: 'buy',  price: 500, quantity: 10, orderExecutionTime: '2025-01-02T09:00:00' }),
       makeTrade({ tradeDate: '2025-01-02', tradeType: 'sell', price: 520, quantity: 10, orderExecutionTime: '2025-01-02T15:00:00' }),
     ]
-    expect(calculateSharpeRatio(trades)).toBe(0)
+    expect(sharpeFromTrades(trades)).toBe(0)
   })
 
   // Test 7: High volatility produces lower Sharpe than low volatility (same mean)
   it('high volatility → lower Sharpe than low volatility given similar mean', () => {
     const lowVol  = makeTradesFromPnLs([100, 105, 95, 110, 90, 102, 98, 108, 97, 103])
     const highVol = makeTradesFromPnLs([500, -300, 400, -200, 350, -250, 450, -150, 300, -100])
-    const sharpeLow  = calculateSharpeRatio(lowVol)
-    const sharpeHigh = calculateSharpeRatio(highVol)
+    const sharpeLow  = sharpeFromTrades(lowVol)
+    const sharpeHigh = sharpeFromTrades(highVol)
     expect(sharpeLow).toBeGreaterThan(sharpeHigh)
   })
 
@@ -903,14 +914,14 @@ describe('calculateSharpeRatio — extended validation', () => {
     // All returns = 50/1000 = 0.05. For n=8, float mean may not be exactly 0.05.
     // We assert the result is either 0 (exact std=0 path) or a finite number.
     // The key property: zero-volatility trades should not produce NaN or Infinity.
-    const result = calculateSharpeRatio(trades)
+    const result = sharpeFromTrades(trades)
     expect(isNaN(result)).toBe(false)
     expect(isFinite(result)).toBe(true)
   })
 
   // Test 9: Empty trades → 0
   it('empty trades array: returns 0', () => {
-    expect(calculateSharpeRatio([])).toBe(0)
+    expect(sharpeFromTrades([])).toBe(0)
   })
 
   // Test 10: Hand-calculated Sharpe with varied returns (5-day reference from plan)
@@ -935,7 +946,7 @@ describe('calculateSharpeRatio — extended validation', () => {
       makeTrade({ tradeDate: '2025-01-05', tradeType: 'buy',  price: 500, quantity: 100, orderExecutionTime: '2025-01-05T09:00:00' }),
       makeTrade({ tradeDate: '2025-01-05', tradeType: 'sell', price: 501, quantity: 100, orderExecutionTime: '2025-01-05T15:00:00' }),
     ]
-    const sharpe = calculateSharpeRatio(trades)
+    const sharpe = sharpeFromTrades(trades)
     // Verify it's close to hand-calculated reference of 7.99 (with 0.1 tolerance for floating point)
     expect(sharpe).toBeCloseTo(7.99, 1)
     expect(isFinite(sharpe)).toBe(true)
@@ -954,7 +965,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: 500, closeDateOffset: 1 },
       { pnl: -750, closeDateOffset: 2 },
     ], '2025-06-01')
-    const summary = makePnLSummary()
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
@@ -1005,7 +1016,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: -50, closeDateOffset: 3 },
       { pnl: 100, closeDateOffset: 4 },
     ], '2025-06-01')
-    const summary = makePnLSummary()
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
   })
@@ -1025,7 +1036,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
       { pnl: 600, closeDateOffset: 3 },
       { pnl: -200, closeDateOffset: 4 },
     ], '2025-07-01')
-    const summary = makePnLSummary()
+    const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     // Should have exactly one month in the result
     expect(result.length).toBe(1)
@@ -1102,28 +1113,28 @@ describe('calculateSharpeRatio — behavioral correctness', () => {
   // Test 1: Positive Sharpe for consistently winning trades
   it('consistently winning trades produce positive Sharpe', () => {
     const trades = makeTradesFromPnLs([200, 250, 180, 220, 210, 230, 190, 240, 200, 215])
-    expect(calculateSharpeRatio(trades)).toBeGreaterThan(0)
+    expect(sharpeFromTrades(trades)).toBeGreaterThan(0)
   })
 
   // Test 2: Negative Sharpe for consistently losing trades
   it('consistently losing trades produce negative Sharpe', () => {
     const trades = makeTradesFromPnLs([-200, -180, -220, -190, -210])
-    expect(calculateSharpeRatio(trades)).toBeLessThan(0)
+    expect(sharpeFromTrades(trades)).toBeLessThan(0)
   })
 
   // Test 3: Higher volatility → lower Sharpe (same approximate mean return)
   it('higher return volatility → lower Sharpe than lower volatility', () => {
     const lowVol  = makeTradesFromPnLs([100, 110, 90, 105, 95, 108, 92, 102, 98, 100])
     const highVol = makeTradesFromPnLs([400, -200, 350, -150, 300, -100, 450, -250, 380, -180])
-    expect(calculateSharpeRatio(lowVol)).toBeGreaterThan(calculateSharpeRatio(highVol))
+    expect(sharpeFromTrades(lowVol)).toBeGreaterThan(sharpeFromTrades(highVol))
   })
 
   // Test 4: Custom risk-free rate is respected — higher rfr → lower Sharpe
   it('custom risk-free rate: higher rate produces lower Sharpe', () => {
     const trades = makeTradesFromPnLs([500, 600, 550, 520, 580, 610, 530, 490, 570, 560])
-    const sharpe0  = calculateSharpeRatio(trades, 0)
-    const sharpe5  = calculateSharpeRatio(trades, 0.05)
-    const sharpe10 = calculateSharpeRatio(trades, 0.10)
+    const sharpe0  = sharpeFromTrades(trades, 0)
+    const sharpe5  = sharpeFromTrades(trades, 0.05)
+    const sharpe10 = sharpeFromTrades(trades, 0.10)
     expect(sharpe0).toBeGreaterThan(sharpe5)
     expect(sharpe5).toBeGreaterThan(sharpe10)
   })
