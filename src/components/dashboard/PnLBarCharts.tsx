@@ -25,10 +25,7 @@ interface PnLBarChartsProps {
 type Aggregation = 'daily' | 'weekly' | 'monthly'
 type CostMode = 'net' | 'gross'
 
-/** Named constants for dynamic chart sizing */
-const BAR_HEIGHT_PX = 30
-const MIN_CHART_HEIGHT = 300
-const MAX_CONTAINER_HEIGHT = 600
+const CHART_HEIGHT = 350
 
 function formatBarDate(isoDate: string, aggregation: Aggregation): string {
   const d = new Date(isoDate)
@@ -57,11 +54,6 @@ export function PnLBarCharts({ trades, symbolPnL }: PnLBarChartsProps) {
     if (trades.length === 0) return []
     return buildTimeline(trades, symbolPnL, aggregation, totalCharges)
   }, [trades, symbolPnL, aggregation, totalCharges])
-
-  const chartHeight = useMemo(
-    () => Math.max(MIN_CHART_HEIGHT, data.length * BAR_HEIGHT_PX),
-    [data.length]
-  )
 
   if (trades.length === 0) return null
 
@@ -116,18 +108,24 @@ export function PnLBarCharts({ trades, symbolPnL }: PnLBarChartsProps) {
         </div>
       </CardHeader>
       <CardContent>
-        <div
-          style={{ maxHeight: MAX_CONTAINER_HEIGHT }}
-          className="overflow-y-auto w-full"
-        >
-          <ResponsiveContainer width="100%" height={chartHeight}>
+        <div className="w-full">
+          <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
             <BarChart
               data={data}
-              layout="vertical"
-              margin={{ top: 5, right: 30, left: 85, bottom: 5 }}
+              margin={{ top: 10, right: 20, left: 20, bottom: 60 }}
             >
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10 }}
+                className="text-muted-foreground"
+                tickFormatter={(v: string) => formatBarDate(v, aggregation)}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+                interval={data.length > 20 ? Math.ceil(data.length / 15) - 1 : 0}
+              />
+              <YAxis
                 type="number"
                 tick={{ fontSize: 11 }}
                 className="text-muted-foreground"
@@ -138,14 +136,6 @@ export function PnLBarCharts({ trades, symbolPnL }: PnLBarChartsProps) {
                       ? `${(v / 1000).toFixed(1)}K`
                       : v.toFixed(0)
                 }
-              />
-              <YAxis
-                type="category"
-                dataKey="date"
-                tick={{ fontSize: 10 }}
-                className="text-muted-foreground"
-                width={85}
-                tickFormatter={(v: string) => formatBarDate(v, aggregation)}
               />
               <RechartsTooltip
                 content={({ active, payload }) => {
@@ -173,8 +163,8 @@ export function PnLBarCharts({ trades, symbolPnL }: PnLBarChartsProps) {
                   )
                 }}
               />
-              <ReferenceLine x={0} stroke="#888" strokeDasharray="3 3" />
-              <Bar dataKey={pnlKey} radius={[0, 4, 4, 0]}>
+              <ReferenceLine y={0} stroke="#888" strokeDasharray="3 3" />
+              <Bar dataKey={pnlKey} radius={[4, 4, 0, 0]}>
                 {data.map((entry, index) => {
                   const val = costMode === 'net' ? entry.dailyNetPnL : entry.dailyPnL
                   return (
