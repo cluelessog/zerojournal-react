@@ -89,7 +89,7 @@ export function calculateSharpeRatio(
  * Returns a map: symbol -> Array<{ date, weight }> where weights sum to 1.0.
  * Consumers multiply symbol.realizedPnL * weight to get date-attributed P&L.
  */
-function buildTradeAttributions(trades: RawTrade[]): Map<string, Array<{ date: string; weight: number }>> {
+export function buildTradeAttributions(trades: RawTrade[]): Map<string, Array<{ date: string; weight: number }>> {
   // Group sell trades by symbol, then by date with total quantity per date
   const symbolSells = new Map<string, Map<string, number>>()
   for (const t of trades) {
