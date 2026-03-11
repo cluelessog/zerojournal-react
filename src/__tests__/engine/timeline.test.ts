@@ -251,6 +251,39 @@ describe('buildTimeline', () => {
     expect(jun01.dailyPnL).toBeCloseTo(2000, 0)
   })
 
+  // Test 11: FIFO-accurate per-date P&L — different profit per sell event
+  // This is the NETWEB scenario: profitable intraday in May, loss in June
+  it('uses actual per-trade P&L, not quantity-weighted aggregate, for per-date distribution', () => {
+    const trades = [
+      // May: buy 100 at 400, sell 100 at 550 → FIFO P&L = +15000
+      makeTrade('NETWEB', '2024-05-10', 'buy', 100, 400),
+      makeTrade('NETWEB', '2024-05-15', 'sell', 100, 550),
+      // June: buy 100 at 600, sell 100 at 550 → FIFO P&L = -5000
+      makeTrade('NETWEB', '2024-06-05', 'buy', 100, 600),
+      makeTrade('NETWEB', '2024-06-10', 'sell', 100, 550),
+    ]
+    // Total realized P&L = 15000 + (-5000) = 10000
+    // Quantity-weight approach gives 50/50 = 5000/5000 (WRONG)
+    // FIFO-accurate approach gives 15000/-5000 (CORRECT)
+    const symbolPnL = [makeSymbolPnL('NETWEB', 10000)]
+
+    const timeline = buildTimeline(trades, symbolPnL, 'daily')
+
+    expect(timeline).toHaveLength(2)
+
+    const may15 = timeline.find((t) => t.date === '2024-05-15')!
+    const jun10 = timeline.find((t) => t.date === '2024-06-10')!
+
+    expect(may15).toBeDefined()
+    expect(jun10).toBeDefined()
+    // May should show the actual 15k profit, not the averaged 5k
+    expect(may15.dailyPnL).toBeCloseTo(15000, 0)
+    // June should show the actual -5k loss
+    expect(jun10.dailyPnL).toBeCloseTo(-5000, 0)
+    // Cumulative should still be correct
+    expect(jun10.cumulativePnL).toBeCloseTo(10000, 0)
+  })
+
   // Test 10: partial-close symbol excluded (openQuantity != 0)
   it('excludes partial-close symbols despite having sell trades', () => {
     const trades = [
