@@ -35,11 +35,14 @@ export function matchTradesWithPnL(trades: RawTrade[]): FIFOMatch[] {
 
   for (const [symbol, symbolTrades] of bySymbol) {
     // Sort by tradeDate, orderExecutionTime, tradeId for deterministic FIFO order
+    // Sort by tradeDate, orderExecutionTime, then buys-before-sells (so buys
+    // are queued before same-timestamp sells consume them), then tradeId.
     const sorted = [...symbolTrades].sort((a, b) => {
       if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? -1 : 1
       if (a.orderExecutionTime !== b.orderExecutionTime) {
         return a.orderExecutionTime < b.orderExecutionTime ? -1 : 1
       }
+      if (a.tradeType !== b.tradeType) return a.tradeType === 'buy' ? -1 : 1
       return String(a.tradeId) < String(b.tradeId) ? -1 : 1
     })
 
