@@ -169,6 +169,89 @@ describe('computeHWMDrawdown with initialCapital', () => {
   })
 })
 
+// ─── BUG FIX: Without capital, drawdown is always absolute INR ───────────────
+
+describe('computeHWMDrawdown without capital — always absolute mode', () => {
+  it('returns absolute INR drawdown when PnL goes positive then drops (the -100% bug)', () => {
+    // Key bug scenario: PnL peaks at 500 then drops to -1500
+    // Old behavior: percentage mode → (-1500-500)/500*100 = -400% clamped to -100%
+    // Fixed behavior: absolute mode → -1500 - 500 = -2000 INR
+    const cumulative = [
+      { date: '2025-01-01', value: 500 },
+      { date: '2025-01-02', value: -1500 },
+    ]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBe(-2000)
+    expect(result.peakDate).toBe('2025-01-01')
+    expect(result.troughDate).toBe('2025-01-02')
+  })
+
+  it('returns absolute INR drawdown for partial retrace (no capital)', () => {
+    // PnL: +1000, +500 — peak was 1000, trough is 500, drop = -500
+    const cumulative = [
+      { date: '2025-01-01', value: 1000 },
+      { date: '2025-01-02', value: 500 },
+    ]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBe(-500)
+  })
+
+  it('returns absolute INR drawdown for all-negative curve (no capital)', () => {
+    // PnL never goes positive — existing behavior preserved
+    const cumulative = [
+      { date: '2025-01-01', value: -1000 },
+      { date: '2025-01-02', value: -3000 },
+    ]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBe(-3000)
+  })
+
+  it('never returns percentage mode without capital even with large positive peak', () => {
+    const cumulative = [
+      { date: '2025-01-01', value: 50000 },
+      { date: '2025-01-02', value: 25000 },
+    ]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBe(-25000)
+  })
+
+  it('returns zero drawdown when PnL only goes up (no capital)', () => {
+    const cumulative = [
+      { date: '2025-01-01', value: 1000 },
+      { date: '2025-01-02', value: 3000 },
+      { date: '2025-01-03', value: 5000 },
+    ]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.value).toBe(0)
+    expect(result.status).toBe('computed')
+    expect(result.mode).toBe('absolute')
+  })
+
+  it('returns zero drawdown with absolute mode for single positive point (no capital)', () => {
+    const cumulative = [{ date: '2025-01-01', value: 1000 }]
+    const result = computeHWMDrawdown(cumulative)
+    expect(result.value).toBe(0)
+    expect(result.status).toBe('computed')
+    expect(result.mode).toBe('absolute')
+  })
+
+  it('still returns percentage mode when capital IS set', () => {
+    // Sanity check: with capital, percentage mode still works
+    const cumulative = [
+      { date: '2025-01-01', value: 500 },
+      { date: '2025-01-02', value: -1500 },
+    ]
+    const result = computeHWMDrawdown(cumulative, 100000)
+    expect(result.mode).toBe('percentage')
+    // equity: 100500, 98500. Peak=100500, dd=(98500-100500)/100500*100 ≈ -1.99%
+    expect(result.value).toBeCloseTo(-1.99, 1)
+  })
+})
+
 // ─── calculateMaxDrawdown with initialCapital ────────────────────────────────
 
 describe('calculateMaxDrawdown with initialCapital', () => {
@@ -194,8 +277,9 @@ describe('calculateMaxDrawdown with initialCapital', () => {
     expect(withCapital.value).toBeCloseTo(-1.99, 1)
 
     const withoutCapital = calculateMaxDrawdown(symbols, trades)
-    // Without capital, curve goes positive first (peak=500), then -1500 → dd= -400% clamped to -100%
-    expect(withoutCapital.value).toBe(-100)
+    // Without capital: always absolute mode. Peak=500, trough=-1500, drop = -2000 INR
+    expect(withoutCapital.mode).toBe('absolute')
+    expect(withoutCapital.value).toBe(-2000)
   })
 
   it('preserves absolute mode when capital is not set', () => {
@@ -375,7 +459,9 @@ describe('Backward Compatibility', () => {
     ]
     const result = computeHWMDrawdown(cumulative)
     expect(result.status).toBe('computed')
-    expect(result.value).toBeCloseTo(-50, 0) // (500-1000)/1000*100 = -50%
+    // Without capital: absolute mode, drop = 500 - 1000 = -500 INR
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBe(-500)
   })
 
   it('computeAnalytics works without initialCapital parameter', () => {

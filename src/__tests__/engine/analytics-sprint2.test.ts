@@ -183,16 +183,17 @@ describe('calculateMaxDrawdown', () => {
     expect(result.troughDate).toBeTruthy()
   })
 
-  it('calculates approximately -50% drawdown from peak to trough', () => {
-    // Cumulative: 1000, 1000, 500 → drawdown = -50%
+  it('calculates absolute INR drawdown from peak to trough (no capital)', () => {
+    // Cumulative: 1000, 1000, 500 → drop from peak 1000 to 500 = -500 INR
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 1000, closeDateOffset: 0 },
       { pnl: 0, closeDateOffset: 1 },
       { pnl: -500, closeDateOffset: 2 },
     ])
     const result = calculateMaxDrawdown(symbolPnL, trades)
-    // (500 - 1000) / 1000 * 100 = -50%
-    expect(result.value).toBeCloseTo(-50, 0)
+    // Without capital: absolute mode, drop = 500 - 1000 = -500 INR
+    expect(result.value).toBe(-500)
+    expect(result.mode).toBe('absolute')
   })
 
   it('returns absolute drawdown for single trade loss (no positive peak)', () => {
@@ -208,9 +209,10 @@ describe('calculateMaxDrawdown', () => {
     expect(result.troughDate).toBeTruthy()
   })
 
-  it('finds worst drawdown among multiple drawdowns', () => {
-    // Cumulative: 100, 50 (dd=-50%), 150, 100 (dd=-33%), 200
-    // Worst drawdown: 100→50 = -50%
+  it('finds worst absolute drawdown among multiple drawdowns (no capital)', () => {
+    // Cumulative: 100, 50, 150, 100, 200
+    // Drops: 100→50 = -50 INR, 150→100 = -50 INR
+    // Worst absolute drawdown = -50 INR
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 100, closeDateOffset: 0 },
       { pnl: -50, closeDateOffset: 1 },
@@ -219,7 +221,8 @@ describe('calculateMaxDrawdown', () => {
       { pnl: 100, closeDateOffset: 4 },
     ])
     const result = calculateMaxDrawdown(symbolPnL, trades)
-    expect(result.value).toBeCloseTo(-50, 0)
+    expect(result.value).toBe(-50)
+    expect(result.mode).toBe('absolute')
   })
 
   it('returns dates when drawdown occurs', () => {
@@ -248,16 +251,17 @@ describe('calculateMaxDrawdown', () => {
     expect(result.mode).toBe('absolute')
   })
 
-  it('returns percentage drawdown with computed status when peak is positive', () => {
-    // Cumulative: 1000, 500 -> drawdown = (500-1000)/1000*100 = -50%
+  it('returns absolute drawdown with computed status when peak is positive (no capital)', () => {
+    // Cumulative: 1000, 500 -> drop from 1000 to 500 = -500 INR
+    // Without capital: always absolute mode, never percentage
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 1000, closeDateOffset: 0 },
       { pnl: -500, closeDateOffset: 1 },
     ])
     const result = calculateMaxDrawdown(symbolPnL, trades)
-    expect(result.value).toBeCloseTo(-50, 0)
+    expect(result.value).toBe(-500)
     expect(result.status).toBe('computed')
-    expect(result.mode).toBe('percentage')
+    expect(result.mode).toBe('absolute')
   })
 
   it('returns status computed with value 0 for monotonically increasing curve', () => {
@@ -1019,7 +1023,7 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
   // Test 1: Hand-calculated reference (3-day month)
   // Day 1 cumPnL=1000, Day 2=1500 (peak), Day 3=750
   // drawdown = (750-1500)/1500 * 100 = -50%
-  it('hand-calculated: peak 1500 → trough 750 → maxDrawdown ≈ -50% (Month A)', () => {
+  it('hand-calculated: peak 1500 → trough 750 → maxDrawdown = -750 INR (Month A, no capital)', () => {
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 1000, closeDateOffset: 0 },
       { pnl: 500, closeDateOffset: 1 },
@@ -1028,7 +1032,9 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
     expect(result).toHaveLength(1)
-    expect(result[0].maxDrawdown).toBeCloseTo(-50, 0)
+    // Without capital: absolute mode, drop = 750 - 1500 = -750 INR
+    expect(result[0].maxDrawdown).toBe(-750)
+    expect(result[0].maxDrawdownMode).toBe('absolute')
   })
 
   // Test 2: No drawdown (all wins — monotonically increasing)
@@ -1088,7 +1094,9 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
   // Day 4: pnl = +600  → cum = 1000, peak = 1000
   // Day 5: pnl = -200  → cum = 800,  drawdown = (800-1000)/1000*100 = -20%
   // Max drawdown = -50% (worst of -50% and -20%)
-  it('hand-calculated reference: 5-day month with multiple peaks → maxDrawdown = -50% (Month B)', () => {
+  it('hand-calculated reference: 5-day month with multiple peaks → maxDrawdown = -400 INR (Month B, no capital)', () => {
+    // Cumulative: 500, 800, 400, 1000, 800
+    // Drops: 800→400 = -400 INR, 1000→800 = -200 INR. Worst = -400
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 500, closeDateOffset: 0 },
       { pnl: 300, closeDateOffset: 1 },
@@ -1098,12 +1106,12 @@ describe('calculateMonthlyBreakdown — maxDrawdown per month', () => {
     ], '2025-07-01')
     const summary = makePnLSummary({ charges: { brokerage: 0, exchangeTxnCharges: 0, sebiTurnoverFee: 0, stampDuty: 0, stt: 0, gst: 0, dpCharges: 0, total: 0 } })
     const result = calculateMonthlyBreakdown(trades, summary, symbolPnL)
-    // Should have exactly one month in the result
     expect(result.length).toBe(1)
-    // Max drawdown should be -50% (from 800 peak to 400 trough)
-    expect(result[0].maxDrawdown).toBeCloseTo(-50, 1)
-    // Verify it's tracking the deepest drawdown, not just the last one (-20%)
-    expect(result[0].maxDrawdown).toBeLessThan(-49) // Much less than -20%
+    // Without capital: absolute mode, worst drop = 400 - 800 = -400 INR
+    expect(result[0].maxDrawdown).toBe(-400)
+    expect(result[0].maxDrawdownMode).toBe('absolute')
+    // Verify it's tracking the deepest drawdown, not just the last one (-200)
+    expect(result[0].maxDrawdown).toBeLessThan(-200)
   })
 })
 
@@ -1200,10 +1208,11 @@ describe('calculateSharpeRatio — behavioral correctness', () => {
   })
 })
 
-describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
-  // Test 1: Extreme loss where cumulative goes deeply negative — should clamp to -100%
-  it('extreme cumulative loss deeply below peak clamps to -100%', () => {
-    // Peak at +1000, then plunge to -24000 should clamp to -100%, not -2500%
+describe('Drawdown Without Capital (Absolute INR Mode)', () => {
+  // Test 1: Extreme loss without capital → absolute INR drawdown (no clamping)
+  it('extreme cumulative loss returns absolute INR drop from peak (no capital)', () => {
+    // Peak at +1000, then cumulative plunges to -24000
+    // Absolute drop = -24000 - 1000 = -25000 INR (before charges)
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 1000, closeDateOffset: 0 },
       { pnl: -2000, closeDateOffset: 1 },
@@ -1215,65 +1224,72 @@ describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
     const snapshot = makeMinimalSnapshot(trades, symbolPnL)
     const result = computeAnalytics(snapshot)
 
-    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
-    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
-    // Should be exactly -100% (clamped)
-    expect(result.maxDrawdown.value).toBe(-100)
+    expect(result.maxDrawdown.mode).toBe('absolute')
+    expect(result.maxDrawdown.value).toBeLessThan(-1000) // large absolute drop
+    expect(result.maxDrawdown.status).toBe('computed')
   })
 
-  // Test 2: Monthly drawdown with extreme loss clamps correctly
-  it('monthly extreme loss clamps to -100%', () => {
-    // Create a month where we peak at 1000 then lose 25000
+  // Test 2: Monthly drawdown without capital → absolute mode
+  it('monthly drawdown returns absolute INR values without capital', () => {
     const pnls = [500, 500, -1000, -2000, -3000, -5000, -8000, -7000]
     const trades = makeTradesFromPnLs(pnls, '2025-01-02')
     const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
     const snapshot = makeMinimalSnapshot(trades, symbolPnL)
     const result = computeAnalytics(snapshot)
 
-    // Monthly breakdown should have max drawdown clamped to [-100, 0]
+    // Monthly drawdown is absolute INR — can be large negative
     for (const m of result.monthlyBreakdown) {
-      expect(m.maxDrawdown).toBeGreaterThanOrEqual(-100)
       expect(m.maxDrawdown).toBeLessThanOrEqual(0)
     }
   })
 
-  // Test 3: Drawdown values never exceed -100% (sanity bounds)
-  it('all drawdown values are bounded by [-100, 0]', () => {
-    const pnls = [100, -50, 200, -80, 150, 300, -20, 400, -100, -200, -300, -150]
-    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
-    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
-    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
-    const result = computeAnalytics(snapshot)
+  // Test 3: Moderate loss without capital → absolute mode, small values
+  it('moderate loss returns small absolute drawdown without capital', () => {
+    // Cumulative: 100, 50, 250, 170, 320, 620, 600, 1000, 900, 700, 400, 250
+    // Peak 1000 at index 7, worst trough 50 at index 1 relative to peak 100 = -50
+    // Actually worst: peak=1000, trough at end 250 → drop = -750
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -50, closeDateOffset: 1 },
+      { pnl: 200, closeDateOffset: 2 },
+      { pnl: -80, closeDateOffset: 3 },
+      { pnl: 150, closeDateOffset: 4 },
+      { pnl: 300, closeDateOffset: 5 },
+      { pnl: -20, closeDateOffset: 6 },
+      { pnl: 400, closeDateOffset: 7 },
+      { pnl: -100, closeDateOffset: 8 },
+      { pnl: -200, closeDateOffset: 9 },
+      { pnl: -300, closeDateOffset: 10 },
+      { pnl: -150, closeDateOffset: 11 },
+    ], '2025-01-02')
+    const result = calculateMaxDrawdown(symbolPnL, trades)
 
-    // Overall drawdown must be in [-100, 0]
-    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
-    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
-
-    // All monthly drawdowns must be in [-100, 0]
-    for (const m of result.monthlyBreakdown) {
-      expect(m.maxDrawdown).toBeGreaterThanOrEqual(-100)
-      expect(m.maxDrawdown).toBeLessThanOrEqual(0)
-    }
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBeLessThanOrEqual(0)
   })
 
-  // Test 4: Moderate loss (no clamping needed)
-  it('moderate loss does not trigger clamping', () => {
-    const pnls = [100, -50, 100, -30, 50, -20]
-    const trades = makeTradesFromPnLs(pnls, '2025-01-02')
-    const symbolPnL = pnls.map((p, i) => makeSymbolPnL(`SYM${i}`, p))
-    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
-    const result = computeAnalytics(snapshot)
+  // Test 4: Moderate loss values are reasonable
+  it('moderate loss absolute drawdown is not extreme', () => {
+    // Cumulative: 100, 50, 150, 120, 170, 150
+    // Peak=170, worst drop: 170→150 = -20 or 100→50 = -50. Worst = -50
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -50, closeDateOffset: 1 },
+      { pnl: 100, closeDateOffset: 2 },
+      { pnl: -30, closeDateOffset: 3 },
+      { pnl: 50, closeDateOffset: 4 },
+      { pnl: -20, closeDateOffset: 5 },
+    ], '2025-01-02')
+    const result = calculateMaxDrawdown(symbolPnL, trades)
 
-    // With moderate losses, drawdown should be between clamped -100 and 0
-    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
-    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
-    // Should be around -30% to -50%, not clamped to -100%
-    expect(result.maxDrawdown.value).toBeGreaterThan(-60)
+    expect(result.mode).toBe('absolute')
+    expect(result.value).toBeLessThanOrEqual(0)
+    // Moderate losses: absolute drop should be small (< 200 INR)
+    expect(result.value).toBeGreaterThan(-200)
   })
 
-  // Test 5: Total loss scenario (peak=100, current=0)
-  it('total portfolio loss clamps to -100%', () => {
-    // Start with 100, then lose it all
+  // Test 5: Total loss without capital → absolute drop equals peak
+  it('total loss shows absolute drop from peak (no capital)', () => {
     const { symbolPnL, trades } = makeDrawdownData([
       { pnl: 100, closeDateOffset: 0 },
       { pnl: -100, closeDateOffset: 1 },
@@ -1281,8 +1297,42 @@ describe('Drawdown Clamping (Extreme Loss Scenarios)', () => {
     const snapshot = makeMinimalSnapshot(trades, symbolPnL)
     const result = computeAnalytics(snapshot)
 
-    // Loss of exactly 100% from peak
-    expect(result.maxDrawdown.value).toBe(-100)
+    expect(result.maxDrawdown.mode).toBe('absolute')
+    // Drop from peak ~100 to ~0 (charges may adjust slightly)
+    expect(result.maxDrawdown.value).toBeLessThan(0)
+  })
+})
+
+describe('Drawdown With Capital (Percentage Clamping)', () => {
+  it('extreme loss with capital clamps to -100%', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 1000, closeDateOffset: 0 },
+      { pnl: -2000, closeDateOffset: 1 },
+      { pnl: -3000, closeDateOffset: 2 },
+      { pnl: -5000, closeDateOffset: 3 },
+      { pnl: -8000, closeDateOffset: 4 },
+      { pnl: -7000, closeDateOffset: 5 },
+    ], '2025-01-02')
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    const result = computeAnalytics(snapshot, 10000)
+
+    expect(result.maxDrawdown.mode).toBe('percentage')
+    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
+    expect(result.maxDrawdown.value).toBeLessThan(0)
+  })
+
+  it('total loss with capital shows -100%', () => {
+    const { symbolPnL, trades } = makeDrawdownData([
+      { pnl: 100, closeDateOffset: 0 },
+      { pnl: -100, closeDateOffset: 1 },
+    ], '2025-01-02')
+    const snapshot = makeMinimalSnapshot(trades, symbolPnL)
+    // With small capital, percentage loss should be bounded
+    const result = computeAnalytics(snapshot, 100000)
+
+    expect(result.maxDrawdown.mode).toBe('percentage')
+    expect(result.maxDrawdown.value).toBeGreaterThanOrEqual(-100)
+    expect(result.maxDrawdown.value).toBeLessThanOrEqual(0)
   })
 })
 

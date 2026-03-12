@@ -198,11 +198,12 @@ function buildNetCumulativeSeries(
  * Compute drawdown from a cumulative P&L series using high-water-mark algorithm.
  *
  * Returns:
- * - When peak > 0: percentage drawdown (negative number, clamped to -100%)
- * - When peak == 0 and curve goes negative: absolute drawdown in INR (negative number)
- * - When peak == 0 and no negative values: 0
+ * - With initialCapital: percentage drawdown relative to capital (clamped to -100%)
+ * - Without initialCapital: absolute drawdown in INR (drop from peak, always negative or 0)
  *
- * Also returns peakDate, troughDate, status, and mode.
+ * Percentage mode only activates when initialCapital is explicitly provided and > 0.
+ * Without capital, the function never returns percentage mode — this prevents the
+ * misleading -100% drawdown that occurred when PnL went positive then dropped.
  */
 export function computeHWMDrawdown(
   cumulative: Array<{ date: string; value: number }>,
@@ -215,9 +216,9 @@ export function computeHWMDrawdown(
   const hasCapital = initialCapital != null && initialCapital > 0
 
   // When initialCapital is set, equity = capital + cumPnL, and peak starts at capital.
-  // This ensures percentage drawdown is always computed relative to the capital base.
+  // Without capital, equity = cumPnL, and peak starts at 0 (pre-trade baseline).
   let peak = hasCapital ? initialCapital : 0
-  let peakDate = ''
+  let peakDate = cumulative[0].date
   let maxDrawdown = 0
   let drawdownPeakDate = ''
   let drawdownTroughDate = ''
@@ -228,10 +229,21 @@ export function computeHWMDrawdown(
       peak = equity
       peakDate = point.date
     }
-    // Only compute percentage drawdown when the high-water mark is positive.
-    if (peak > 0) {
-      // Clamp to [-100%, 0%]: drawdown can't exceed -100% (total loss of capital)
-      const drawdown = Math.max(-100, (equity - peak) / Math.abs(peak) * 100)
+
+    if (hasCapital) {
+      // Percentage drawdown relative to capital base
+      if (peak > 0) {
+        // Clamp to [-100%, 0%]: drawdown can't exceed -100% (total loss of capital)
+        const drawdown = Math.max(-100, (equity - peak) / Math.abs(peak) * 100)
+        if (drawdown < maxDrawdown) {
+          maxDrawdown = drawdown
+          drawdownPeakDate = peakDate
+          drawdownTroughDate = point.date
+        }
+      }
+    } else {
+      // Absolute drawdown in INR (no capital → no meaningful percentage)
+      const drawdown = equity - peak
       if (drawdown < maxDrawdown) {
         maxDrawdown = drawdown
         drawdownPeakDate = peakDate
@@ -240,47 +252,24 @@ export function computeHWMDrawdown(
     }
   }
 
-  // If peak went positive, return percentage drawdown
-  if (peak > 0) {
+  // Return result based on mode
+  if (maxDrawdown < 0) {
     return {
       value: maxDrawdown,
       peakDate: drawdownPeakDate,
       troughDate: drawdownTroughDate,
       status: 'computed',
-      mode: 'percentage', // Always percentage when peak goes positive
+      mode: hasCapital ? 'percentage' : 'absolute',
     }
   }
 
-  // Peak never went positive: check for absolute drawdown (curve goes negative)
-  // (This path only applies when no initialCapital is set)
-  let minValue = 0
-  let minDate = ''
-  for (const point of cumulative) {
-    if (point.value < minValue) {
-      minValue = point.value
-      minDate = point.date
-    }
-  }
-
-  if (minValue < 0) {
-    // Absolute drawdown: the deepest negative point (in INR)
-    return {
-      value: minValue,
-      peakDate: cumulative[0].date,
-      troughDate: minDate,
-      status: 'computed',
-      mode: 'absolute',
-    }
-  }
-
-  // No drawdown at all (curve never went positive and never went negative)
-  // When capital is set, show as percentage (0%); otherwise no mode
+  // No drawdown at all
   return {
     value: 0,
     peakDate: '',
     troughDate: '',
     status: 'computed',
-    mode: hasCapital ? 'percentage' : undefined,
+    mode: hasCapital ? 'percentage' : 'absolute',
   }
 }
 
