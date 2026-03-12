@@ -112,6 +112,19 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
             {trendLabel}
           </span>
         </CardTitle>
+        <div className="mt-1 flex items-center gap-4 text-xs text-muted-foreground">
+          <span>
+            <span className="inline-block h-2 w-4 rounded-sm align-middle" style={{ backgroundColor: '#9333ea' }} />{' '}
+            Initial: <span className="font-medium text-foreground">Rs. {formatCurrency(initialExpectancy)}</span>
+          </span>
+          <span>
+            <span className="inline-block h-2 w-4 rounded-sm align-middle" style={{ backgroundColor: '#0891b2' }} />{' '}
+            Current: <span className="font-medium text-foreground">Rs. {formatCurrency(currentExpectancy)}</span>
+          </span>
+          <span className={trendColorClass}>
+            {currentExpectancy - initialExpectancy >= 0 ? '+' : ''}Rs. {formatCurrency(currentExpectancy - initialExpectancy)}
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="h-[280px] w-full">
@@ -144,7 +157,7 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
                   y={initialExpectancy}
                   stroke="#9333ea"
                   strokeDasharray="6 4"
-                  label={{ value: collapsed ? 'Initial ≈ Current' : 'Initial', position: 'right', fontSize: 10, fill: '#9333ea' }}
+                  label={{ value: collapsed ? `Initial ≈ Current: Rs. ${formatCurrency(initialExpectancy)}` : `Initial: Rs. ${formatCurrency(initialExpectancy)}`, position: 'right', fontSize: 10, fill: '#9333ea' }}
                 />
               )}
               {/* Current expectancy reference line (hidden when collapsed with initial) */}
@@ -153,7 +166,7 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
                   y={currentExpectancy}
                   stroke="#0891b2"
                   strokeDasharray="6 4"
-                  label={{ value: 'Current', position: 'right', fontSize: 10, fill: '#0891b2' }}
+                  label={{ value: `Current: Rs. ${formatCurrency(currentExpectancy)}`, position: 'right', fontSize: 10, fill: '#0891b2' }}
                 />
               )}
               {/* Overall: solid blue */}
