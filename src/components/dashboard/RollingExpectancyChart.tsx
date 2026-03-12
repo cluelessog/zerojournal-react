@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import {
   LineChart,
   Line,
@@ -10,12 +11,17 @@ import {
   Legend,
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import type { RollingExpectancyPoint } from '@/lib/types'
 
 interface RollingExpectancyChartProps {
   data: RollingExpectancyPoint[]
   window?: number
 }
+
+const TREND_THRESHOLD = 1 // Rs. — below this, trend is "Flat"
+const COLLAPSE_THRESHOLD = 10 // Rs. — below this, merge initial/current into one line
+const ZERO_COLLISION_THRESHOLD = 5 // Rs. — skip reference line if too close to zero
 
 function formatCurrency(value: number): string {
   if (Math.abs(value) >= 1000) {
@@ -68,11 +74,43 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
     )
   }
 
+  const { initialExpectancy, currentExpectancy, trend, collapsed } = useMemo(() => {
+    const initial = data[0].overall
+    const current = data[data.length - 1].overall
+    const diff = current - initial
+    let trendDir: 'improving' | 'declining' | 'flat'
+    if (diff > TREND_THRESHOLD) trendDir = 'improving'
+    else if (diff < -TREND_THRESHOLD) trendDir = 'declining'
+    else trendDir = 'flat'
+    return {
+      initialExpectancy: initial,
+      currentExpectancy: current,
+      trend: trendDir,
+      collapsed: Math.abs(diff) < COLLAPSE_THRESHOLD,
+    }
+  }, [data])
+
+  const TrendIcon = trend === 'improving' ? TrendingUp : trend === 'declining' ? TrendingDown : Minus
+  const trendColorClass =
+    trend === 'improving'
+      ? 'text-green-600 dark:text-green-400'
+      : trend === 'declining'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-muted-foreground'
+  const trendLabel = trend === 'improving' ? 'Improving' : trend === 'declining' ? 'Declining' : 'Flat'
+
+  const showInitialLine = Math.abs(initialExpectancy) > ZERO_COLLISION_THRESHOLD
+  const showCurrentLine = Math.abs(currentExpectancy) > ZERO_COLLISION_THRESHOLD
+
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base font-semibold">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
           Rolling {window}-Trade Expectancy
+          <span data-testid="trend-badge" className={`inline-flex items-center gap-1 text-xs font-medium ${trendColorClass}`}>
+            <TrendIcon className="h-3.5 w-3.5" />
+            {trendLabel}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -100,6 +138,24 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
                 }
               />
               <ReferenceLine y={0} stroke="#888" strokeDasharray="3 3" />
+              {/* Initial expectancy reference line */}
+              {showInitialLine && (
+                <ReferenceLine
+                  y={initialExpectancy}
+                  stroke="#9333ea"
+                  strokeDasharray="6 4"
+                  label={{ value: collapsed ? 'Initial ≈ Current' : 'Initial', position: 'right', fontSize: 10, fill: '#9333ea' }}
+                />
+              )}
+              {/* Current expectancy reference line (hidden when collapsed with initial) */}
+              {showCurrentLine && !collapsed && (
+                <ReferenceLine
+                  y={currentExpectancy}
+                  stroke="#0891b2"
+                  strokeDasharray="6 4"
+                  label={{ value: 'Current', position: 'right', fontSize: 10, fill: '#0891b2' }}
+                />
+              )}
               {/* Overall: solid blue */}
               <Line
                 type="monotone"
@@ -136,7 +192,7 @@ export function RollingExpectancyChart({ data, window = 20 }: RollingExpectancyC
           </ResponsiveContainer>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Rolling {window}-trade window. Each point = expectancy (Rs./trade) over last {window} FIFO-matched trades.
+          Rolling {window}-trade window. Dashed lines show initial and current overall expectancy.
         </p>
       </CardContent>
     </Card>

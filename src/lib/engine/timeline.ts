@@ -84,7 +84,7 @@ export function buildTimeline(
         existing.pnl += s.realizedPnL * pnlWeight
         // Turnover uses quantity-weighted attribution (charges scale with trade value, not P&L)
         const qtyAttrs = quantityAttributions.get(s.symbol)
-        const qtyWeight = qtyAttrs?.find((a) => a.date === date)?.weight ?? 0
+        const qtyWeight = qtyAttrs?.find((a: { date: string; weight: number }) => a.date === date)?.weight ?? 0
         existing.turnover += totalTurnover * qtyWeight
         existing.count += sellTradeCount.get(s.symbol)?.get(date) ?? 0
         dateMap.set(dateKey, existing)
