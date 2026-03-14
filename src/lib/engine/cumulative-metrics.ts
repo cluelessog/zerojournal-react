@@ -1,4 +1,5 @@
 import type { FIFOMatch } from '../types'
+import { sortMatchesChronologically } from './fifo-matcher'
 
 export interface CumulativeMetricsPoint {
   tradeIndex: number
@@ -14,14 +15,7 @@ const RATIO_CAP = 5
 export function calculateCumulativeMetrics(matches: FIFOMatch[]): CumulativeMetricsPoint[] {
   if (matches.length === 0) return []
 
-  // Sort chronologically by (sellDate, symbol, buyDate) to interleave
-  // same-date matches across symbols, avoiding single-symbol cluster bias
-  const sorted = [...matches].sort((a, b) => {
-    if (a.sellDate !== b.sellDate) return a.sellDate < b.sellDate ? -1 : 1
-    if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1
-    if (a.buyDate !== b.buyDate) return a.buyDate < b.buyDate ? -1 : 1
-    return 0
-  })
+  const sorted = sortMatchesChronologically(matches)
 
   const points: CumulativeMetricsPoint[] = []
   let wins = 0

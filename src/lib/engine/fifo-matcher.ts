@@ -105,6 +105,22 @@ export function matchTradesWithPnL(trades: RawTrade[]): FIFOMatch[] {
 }
 
 /**
+ * Sort FIFO matches chronologically by (sellDate, symbol, buyDate).
+ * Returns a new array — does not mutate the input.
+ *
+ * Used by rolling expectancy and cumulative metrics to ensure the
+ * sliding window moves through time-ordered trades, not symbol clusters.
+ */
+export function sortMatchesChronologically(matches: FIFOMatch[]): FIFOMatch[] {
+  return [...matches].sort((a, b) => {
+    if (a.sellDate !== b.sellDate) return a.sellDate < b.sellDate ? -1 : 1
+    if (a.symbol !== b.symbol) return a.symbol < b.symbol ? -1 : 1
+    if (a.buyDate !== b.buyDate) return a.buyDate < b.buyDate ? -1 : 1
+    return 0
+  })
+}
+
+/**
  * Calculate the number of calendar days between two ISO date strings.
  */
 function dateDiffDays(from: string, to: string): number {

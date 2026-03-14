@@ -1392,4 +1392,44 @@ describe('calculateRollingExpectancy', () => {
     // winRate=1/20=0.05, avgWin=1000, avgLoss=-50 → 0.05*1000 + 0.95*(-50) = 50 - 47.5 = 2.5
     expect(result[1].overall).toBeCloseTo(2.5, 2)
   })
+
+  it('sorts multi-symbol matches chronologically before windowing', () => {
+    // Without sorting: matches are symbol-clustered [A,A,A,B,B,B]
+    // With sorting: matches are chronological [A(Jan1),B(Jan2),A(Jan3),B(Jan4),A(Jan5),B(Jan6)]
+    // The rolling window should contain time-ordered trades, not symbol clusters
+    const matches: import('@/lib/types').FIFOMatch[] = [
+      // Symbol A: wins on Jan 1, 3, 5
+      { symbol: 'A', buyDate: '2025-01-01', sellDate: '2025-01-01', quantity: 10, buyPrice: 100, sellPrice: 110, pnl: 100, holdingDays: 0 },
+      { symbol: 'A', buyDate: '2025-01-03', sellDate: '2025-01-03', quantity: 10, buyPrice: 100, sellPrice: 110, pnl: 100, holdingDays: 0 },
+      { symbol: 'A', buyDate: '2025-01-05', sellDate: '2025-01-05', quantity: 10, buyPrice: 100, sellPrice: 110, pnl: 100, holdingDays: 0 },
+      // Symbol B: losses on Jan 2, 4, 6
+      { symbol: 'B', buyDate: '2025-01-02', sellDate: '2025-01-02', quantity: 10, buyPrice: 100, sellPrice: 95, pnl: -50, holdingDays: 0 },
+      { symbol: 'B', buyDate: '2025-01-04', sellDate: '2025-01-04', quantity: 10, buyPrice: 100, sellPrice: 95, pnl: -50, holdingDays: 0 },
+      { symbol: 'B', buyDate: '2025-01-06', sellDate: '2025-01-06', quantity: 10, buyPrice: 100, sellPrice: 95, pnl: -50, holdingDays: 0 },
+    ]
+
+    const result = calculateRollingExpectancy(matches, 4)
+    // With chronological sort: [A(Jan1), B(Jan2), A(Jan3), B(Jan4), A(Jan5), B(Jan6)]
+    // Every window of 4 has 2 wins + 2 losses → stable expectancy
+    // winRate=0.5, avgWin=100, avgLoss=-50 → expectancy = 0.5*100 + 0.5*(-50) = 25
+    expect(result).toHaveLength(3) // 6 - 4 + 1
+    expect(result[0].overall).toBeCloseTo(25, 2)
+    expect(result[1].overall).toBeCloseTo(25, 2)
+    expect(result[2].overall).toBeCloseTo(25, 2)
+  })
+
+  it('multi-symbol rolling expectancy matches are ordered by sellDate', () => {
+    // Verify trade numbers are sequential after sort
+    const matches: import('@/lib/types').FIFOMatch[] = [
+      { symbol: 'Z', buyDate: '2025-01-05', sellDate: '2025-01-05', quantity: 10, buyPrice: 100, sellPrice: 110, pnl: 100, holdingDays: 0 },
+      { symbol: 'A', buyDate: '2025-01-01', sellDate: '2025-01-01', quantity: 10, buyPrice: 100, sellPrice: 95, pnl: -50, holdingDays: 0 },
+      { symbol: 'M', buyDate: '2025-01-03', sellDate: '2025-01-03', quantity: 10, buyPrice: 100, sellPrice: 110, pnl: 100, holdingDays: 0 },
+    ]
+    const result = calculateRollingExpectancy(matches, 3)
+    expect(result).toHaveLength(1)
+    expect(result[0].tradeNumber).toBe(3)
+    // Sorted: A(Jan1,-50), M(Jan3,+100), Z(Jan5,+100)
+    // winRate=2/3, avgWin=100, avgLoss=-50 → 2/3*100 + 1/3*(-50) = 66.67-16.67 = 50
+    expect(result[0].overall).toBeCloseTo(50, 2)
+  })
 })

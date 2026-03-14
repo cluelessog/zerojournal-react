@@ -1,5 +1,5 @@
 import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
-import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
+import { matchTradesWithPnL, sortMatchesChronologically } from '@/lib/engine/fifo-matcher'
 
 /** Number of trading days per year used for Sharpe Ratio annualization. */
 const TRADING_DAYS_PER_YEAR = 252
@@ -704,10 +704,13 @@ export function calculateRollingExpectancy(
 ): RollingExpectancyPoint[] {
   if (matches.length < window) return []
 
+  // Sort chronologically so the rolling window slides through time,
+  // not through symbol clusters (matchTradesWithPnL groups by symbol)
+  const sorted = sortMatchesChronologically(matches)
   const points: RollingExpectancyPoint[] = []
 
-  for (let i = window - 1; i < matches.length; i++) {
-    const slice = matches.slice(i - window + 1, i + 1)
+  for (let i = window - 1; i < sorted.length; i++) {
+    const slice = sorted.slice(i - window + 1, i + 1)
     const overall = buildExpectancyBreakdown(slice).expectancy
     const intradaySlice = slice.filter((m) => m.holdingDays === 0)
     const swingSlice = slice.filter((m) => m.holdingDays > 0)
