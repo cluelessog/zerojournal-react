@@ -44,6 +44,9 @@ const DurationDistributionChart = lazy(() =>
 const PnLBarCharts = lazy(() =>
   import('@/components/dashboard/PnLBarCharts').then((m) => ({ default: m.PnLBarCharts }))
 )
+const MonthlyExpectancyChart = lazy(() =>
+  import('@/components/dashboard/MonthlyExpectancyChart').then((m) => ({ default: m.MonthlyExpectancyChart }))
+)
 
 export default function DashboardPage() {
   const navigate = useNavigate()
@@ -398,6 +401,13 @@ export default function DashboardPage() {
             <ChartErrorBoundary chartName="Rolling Expectancy">
               <Suspense fallback={<ChartSkeleton height={280} />}>
                 <RollingExpectancyChart data={analytics.rollingExpectancy} />
+              </Suspense>
+            </ChartErrorBoundary>
+
+            {/* Monthly Expectancy by Style (Intraday vs Swing) */}
+            <ChartErrorBoundary chartName="Monthly Expectancy">
+              <Suspense fallback={<ChartSkeleton height={350} />}>
+                <MonthlyExpectancyChart monthlyBreakdown={analytics.monthlyBreakdown} />
               </Suspense>
             </ChartErrorBoundary>
 
