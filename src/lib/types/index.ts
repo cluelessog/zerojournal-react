@@ -110,6 +110,8 @@ export interface MonthlyMetric {
   overallExpectancy?: number    // INR per trade for this month
   intradayExpectancy?: number   // INR per trade for intraday matches
   swingExpectancy?: number      // INR per trade for swing matches
+  intradayCount?: number        // number of intraday FIFO matches this month
+  swingCount?: number           // number of swing FIFO matches this month
 }
 
 export interface FIFOMatch {

@@ -102,8 +102,8 @@ export function MonthlyExpectancyChart({ monthlyBreakdown }: MonthlyExpectancyCh
         overall: m.overallExpectancy!,
         intraday: m.intradayExpectancy ?? null,
         swing: m.swingExpectancy ?? null,
-        intradayCount: 0, // counts not available in MonthlyMetric; show trade total
-        swingCount: 0,
+        intradayCount: m.intradayCount ?? 0,
+        swingCount: m.swingCount ?? 0,
         totalCount: m.trades,
       }))
   }, [monthlyBreakdown])

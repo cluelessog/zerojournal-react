@@ -793,8 +793,8 @@ export function classifyTradingStyles(matches: FIFOMatch[]): TradingStyleResult 
  */
 export function calculateMonthlyExpectancy(
   matches: FIFOMatch[],
-): Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null }> {
-  const result = new Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null }>()
+): Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null; intradayCount: number; swingCount: number }> {
+  const result = new Map<string, { overallExpectancy: number; intradayExpectancy: number | null; swingExpectancy: number | null; intradayCount: number; swingCount: number }>()
 
   if (matches.length === 0) return result
 
@@ -823,7 +823,7 @@ export function calculateMonthlyExpectancy(
       ? buildExpectancyBreakdown(swingMatches).expectancy
       : null
 
-    result.set(month, { overallExpectancy, intradayExpectancy, swingExpectancy })
+    result.set(month, { overallExpectancy, intradayExpectancy, swingExpectancy, intradayCount: intradayMatches.length, swingCount: swingMatches.length })
   }
 
   return result
@@ -1001,6 +1001,8 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
       m.overallExpectancy = exp.overallExpectancy
       m.intradayExpectancy = exp.intradayExpectancy ?? undefined
       m.swingExpectancy = exp.swingExpectancy ?? undefined
+      m.intradayCount = exp.intradayCount
+      m.swingCount = exp.swingCount
     }
   }
 
