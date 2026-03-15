@@ -7,6 +7,7 @@ import { TradesTable } from '@/components/trades/TradesTable'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { exportTradesCSV, exportSymbolPnLCSV } from '@/lib/persistence/import-export'
+import { allocateCharges } from '@/lib/engine/charge-allocator'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ export default function TradesPage() {
 
   // Load snapshot from IndexedDB on first mount (if not already loaded)
   const symbolPnL = usePortfolioStore((s) => s.symbolPnL)
+  const pnlSummary = usePortfolioStore((s) => s.pnlSummary)
   const loadFromDB = usePortfolioStore((s) => s.loadFromDB)
   React.useEffect(() => {
     if (!isLoaded) {
@@ -71,6 +73,12 @@ export default function TradesPage() {
     return result
   }, [trades, selectedSymbols, dateRange, tradeTypeFilter])
 
+  // Compute allocated charges when filters are active
+  const allocatedCharges = React.useMemo(() => {
+    if (!pnlSummary || filteredTrades.length === trades.length) return null
+    return allocateCharges(pnlSummary.charges.total, trades, filteredTrades)
+  }, [pnlSummary, trades, filteredTrades])
+
   if (!isLoaded || trades.length === 0) {
     return (
       <div className="p-6">
@@ -118,6 +126,25 @@ export default function TradesPage() {
         onExportPnLCSV={() => exportSymbolPnLCSV(symbolPnL, trades)}
         onReset={resetTradeFilters}
       />
+
+      {/* Allocated charges when filters are active */}
+      {allocatedCharges && pnlSummary && (
+        <p className="text-sm text-muted-foreground">
+          Estimated charges: Rs.{' '}
+          {allocatedCharges.total.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}{' '}
+          ({(allocatedCharges.ratio * 100).toLocaleString('en-IN', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          })}% of total Rs.{' '}
+          {pnlSummary.charges.total.toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })})
+        </p>
+      )}
 
       {/* Table */}
       <TradesTable
