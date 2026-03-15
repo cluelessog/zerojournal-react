@@ -1,8 +1,8 @@
 import { openDB as idbOpenDB, type IDBPDatabase } from 'idb'
-import type { PortfolioSnapshot, ImportMetadata } from '@/lib/types'
+import type { PortfolioSnapshot, ImportMetadata, JournalEntry } from '@/lib/types'
 
 const DB_NAME = 'zerojournal'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 interface ZeroJournalDB {
   portfolio: {
@@ -16,6 +16,11 @@ interface ZeroJournalDB {
   settings: {
     key: string
     value: unknown
+  }
+  journal: {
+    key: string
+    value: JournalEntry
+    indexes: { 'by-date': string }
   }
 }
 
@@ -50,6 +55,13 @@ export async function getDB(): Promise<IDBPDatabase<ZeroJournalDB>> {
         db.createObjectStore('portfolio')
         db.createObjectStore('metadata')
       }
+      // v4: journal store for trade journal entries
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains('journal')) {
+          const journalStore = db.createObjectStore('journal', { keyPath: 'id' })
+          journalStore.createIndex('by-date', 'tradeDate', { unique: false })
+        }
+      }
     },
   })
 
@@ -68,11 +80,12 @@ export async function loadPortfolio(): Promise<PortfolioSnapshot | undefined> {
 
 export async function deleteAll(): Promise<void> {
   const db = await getDB()
-  const tx = db.transaction(['portfolio', 'metadata', 'settings'], 'readwrite')
+  const tx = db.transaction(['portfolio', 'metadata', 'settings', 'journal'], 'readwrite')
   await Promise.all([
     tx.objectStore('portfolio').clear(),
     tx.objectStore('metadata').clear(),
     tx.objectStore('settings').clear(),
+    tx.objectStore('journal').clear(),
     tx.done,
   ])
 }
@@ -85,4 +98,34 @@ export async function getMetadata(): Promise<ImportMetadata | undefined> {
 export async function saveMetadata(metadata: ImportMetadata): Promise<void> {
   const db = await getDB()
   await db.put('metadata', metadata, 'current')
+}
+
+export async function addJournalEntry(entry: JournalEntry): Promise<void> {
+  const db = await getDB()
+  await db.add('journal', entry)
+}
+
+export async function getJournalEntry(id: string): Promise<JournalEntry | undefined> {
+  const db = await getDB()
+  return db.get('journal', id)
+}
+
+export async function getAllJournalEntries(): Promise<JournalEntry[]> {
+  const db = await getDB()
+  return db.getAll('journal')
+}
+
+export async function getJournalEntriesByDate(date: string): Promise<JournalEntry[]> {
+  const db = await getDB()
+  return db.getAllFromIndex('journal', 'by-date', date)
+}
+
+export async function updateJournalEntry(entry: JournalEntry): Promise<void> {
+  const db = await getDB()
+  await db.put('journal', entry)
+}
+
+export async function deleteJournalEntry(id: string): Promise<void> {
+  const db = await getDB()
+  await db.delete('journal', id)
 }

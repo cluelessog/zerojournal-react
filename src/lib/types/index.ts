@@ -351,4 +351,24 @@ export interface ZeroJournalDBSchema {
     key: string
     value: unknown
   }
+  journal: {
+    key: string
+    value: JournalEntry
+    indexes: { 'by-date': string }
+  }
+}
+
+// --- Journal Types ---
+
+export type JournalMood = 'confident' | 'neutral' | 'anxious' | 'frustrated' | 'disciplined'
+
+export interface JournalEntry {
+  id: string              // crypto.randomUUID()
+  tradeDate: string       // YYYY-MM-DD — the trading day this entry is about
+  symbol: string | null   // optional link to a traded symbol
+  content: string         // plain text
+  tags: string[]          // user-defined tags
+  mood: JournalMood | null
+  createdAt: string       // ISO datetime
+  updatedAt: string       // ISO datetime
 }
