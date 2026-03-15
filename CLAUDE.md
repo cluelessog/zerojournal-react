@@ -43,12 +43,12 @@ Excel files → Parser (Web Worker) → portfolio-store.importData() → Indexed
 
 - `src/lib/engine/` — Pure computation functions (analytics, FIFO matcher, timeline, insights, cumulative metrics). **No side effects.** Test these with unit tests.
 - `src/lib/parser/` — Excel parsing with Web Worker support. Normalizes Zerodha format to `RawTrade[]`.
-- `src/lib/store/` — Two Zustand stores: `portfolio-store` (trades, analytics, persistence) and `ui-store` (filters, sidebar state, session-scoped).
-- `src/lib/persistence/` — IndexedDB wrapper (DB version 3, three object stores: portfolio, metadata, settings).
+- `src/lib/store/` — Three Zustand stores: `portfolio-store` (trades, analytics, persistence), `ui-store` (filters, sidebar state, session-scoped), and `journal-store` (journal entries, CRUD via IndexedDB).
+- `src/lib/persistence/` — IndexedDB wrapper (DB version 4, four object stores: portfolio, metadata, settings, journal).
 - `src/lib/types/index.ts` — All shared TypeScript interfaces (~353 lines). Core types: `RawTrade`, `OrderGroup`, `SymbolPnL`, `TradeAnalytics`, `FIFOMatch`, `TimelinePoint`.
 - `src/components/dashboard/` — Lazy-loaded chart components wrapped in `Suspense` + `ChartErrorBoundary`.
 - `src/components/ui/` — shadcn/ui primitives (do not modify manually — generated).
-- `src/pages/` — Route pages: Dashboard (tabs: Overview/Analytics/Trades), Trades, Analysis, Import.
+- `src/pages/` — Route pages: Dashboard (tabs: Overview/Analytics/Trades), Trades, Analysis, Import, Journal.
 
 ### Engine Pipeline
 
@@ -93,7 +93,8 @@ const MyChart = lazy(() => import('@/components/dashboard/MyChart').then(m => ({
 ## Workflow Rules
 
 1. **Test-first for bug fixes**: When asked to fix an issue, first write tests that reproduce the issue, then fix the code until all tests pass.
-2. **Always use worktrees**: Start all work in a new git worktree. Commit only to the worktree branch — do not merge to master without explicit user approval.
+2. **Always use worktrees inside the project**: Start all work in a new git worktree under `.claude/worktrees/` within the project directory. Never create worktrees outside the project root. Commit only to the worktree branch — do not merge to master without explicit user approval.
+3. **Never push without approval**: Do not `git push` to any remote branch without explicit user approval for that specific push. Prior push approvals do not carry forward to new pushes.
 
 ```bash
 git worktree add .claude/worktrees/<name> -b feature/<branch-name> master
