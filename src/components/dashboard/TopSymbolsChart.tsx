@@ -99,7 +99,7 @@ export function TopSymbolsChart({ symbolPnL, fifoMatches }: TopSymbolsChartProps
                   return (
                     <div className="rounded-lg border bg-background p-2 shadow-md text-xs">
                       <p className="font-medium">{d.symbol}</p>
-                      <p className={d.pnl >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      <p className={d.pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                         Rs. {d.pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </p>
                       {d.winRate != null && (
