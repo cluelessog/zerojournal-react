@@ -366,9 +366,12 @@ export interface JournalEntry {
   id: string              // crypto.randomUUID()
   tradeDate: string       // YYYY-MM-DD — the trading day this entry is about
   symbol: string | null   // optional link to a traded symbol
-  content: string         // plain text
-  tags: string[]          // user-defined tags
-  mood: JournalMood | null
+  notes: string           // plain text (v5+; replaces content)
+  setup: string | null    // optional: what pattern/setup was being traded
+  orderGroupId: string | null  // optional: future per-trade linking
+  content?: string        // deprecated: v4 entries stored this instead of notes
+  tags?: string[]         // deprecated: v4 entries may have tags
+  mood?: JournalMood | null  // deprecated: v4 entries may have mood
   createdAt: string       // ISO datetime
   updatedAt: string       // ISO datetime
 }

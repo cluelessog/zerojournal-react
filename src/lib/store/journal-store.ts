@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { JournalEntry, JournalMood } from '@/lib/types'
+import type { JournalEntry } from '@/lib/types'
 import {
   addJournalEntry,
   getAllJournalEntries,
@@ -7,6 +7,16 @@ import {
   updateJournalEntry,
   deleteJournalEntry,
 } from '@/lib/persistence/db'
+
+/** Normalize legacy v4 entries that have `content` instead of `notes` */
+function normalizeEntry(entry: JournalEntry): JournalEntry {
+  return {
+    ...entry,
+    notes: entry.notes ?? entry.content ?? '',
+    setup: entry.setup ?? null,
+    orderGroupId: entry.orderGroupId ?? null,
+  }
+}
 
 interface JournalStore {
   // State
@@ -20,10 +30,10 @@ interface JournalStore {
   loadEntriesByDate: (date: string) => Promise<void>
   addEntry: (entry: {
     tradeDate: string
-    symbol: string | null
-    content: string
-    tags: string[]
-    mood: JournalMood | null
+    notes: string
+    symbol?: string | null
+    setup?: string | null
+    orderGroupId?: string | null
   }) => Promise<void>
   updateEntry: (id: string, updates: Partial<Omit<JournalEntry, 'id' | 'createdAt'>>) => Promise<void>
   deleteEntry: (id: string) => Promise<void>
@@ -39,7 +49,8 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
   loadEntries: async () => {
     set({ isLoading: true, error: null })
     try {
-      const entries = await getAllJournalEntries()
+      const raw = await getAllJournalEntries()
+      const entries = raw.map(normalizeEntry)
       // Sort most recent first
       entries.sort((a, b) => b.tradeDate.localeCompare(a.tradeDate))
       set({ entries, isLoading: false })
@@ -52,7 +63,8 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
   loadEntriesByDate: async (date: string) => {
     set({ isLoading: true, error: null })
     try {
-      const entries = await getJournalEntriesByDate(date)
+      const raw = await getJournalEntriesByDate(date)
+      const entries = raw.map(normalizeEntry)
       entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       set({ entries, isLoading: false })
     } catch (err) {
@@ -61,15 +73,15 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
     }
   },
 
-  addEntry: async ({ tradeDate, symbol, content, tags, mood }) => {
+  addEntry: async ({ tradeDate, notes, symbol, setup, orderGroupId }) => {
     const now = new Date().toISOString()
     const entry: JournalEntry = {
       id: crypto.randomUUID(),
       tradeDate,
       symbol: symbol ?? null,
-      content,
-      tags,
-      mood,
+      notes,
+      setup: setup ?? null,
+      orderGroupId: orderGroupId ?? null,
       createdAt: now,
       updatedAt: now,
     }
