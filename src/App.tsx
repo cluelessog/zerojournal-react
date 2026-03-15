@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
 import DashboardPage from '@/pages/DashboardPage'
@@ -7,6 +7,8 @@ import AnalysisPage from '@/pages/AnalysisPage'
 import ImportPage from '@/pages/ImportPage'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+
+const JournalPage = lazy(() => import('@/pages/JournalPage'))
 
 export default function App() {
   const isLoaded = usePortfolioStore((s) => s.isLoaded)
@@ -28,6 +30,14 @@ export default function App() {
           <Route path="/trades" element={<TradesPage />} />
           <Route path="/analysis" element={<AnalysisPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route
+            path="/journal"
+            element={
+              <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading…</div>}>
+                <JournalPage />
+              </Suspense>
+            }
+          />
         </Routes>
       </AppShell>
     </ErrorBoundary>

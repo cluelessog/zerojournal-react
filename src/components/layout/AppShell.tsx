@@ -24,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: '◉' },
   { path: '/trades', label: 'Trades', icon: '⇄' },
   { path: '/analysis', label: 'Analysis', icon: '◈' },
+  { path: '/journal', label: 'Journal', icon: '📓' },
   { path: '/import', label: 'Import', icon: '↑' },
 ]
 
