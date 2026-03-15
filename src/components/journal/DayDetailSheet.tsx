@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import { PlusCircle } from 'lucide-react'
 import {
@@ -24,6 +24,7 @@ interface DayDetailSheetProps {
   onAddEntry: (symbol?: string) => void
   onEditEntry: (entry: JournalEntry) => void
   onDeleteEntry: (id: string) => void
+  editorSlot?: ReactNode
 }
 
 function formatRs(value: number): string {
@@ -44,6 +45,7 @@ export function DayDetailSheet({
   onAddEntry,
   onEditEntry,
   onDeleteEntry,
+  editorSlot,
 }: DayDetailSheetProps) {
   const dayFifoMatches = useMemo(
     () => (date ? fifoMatches.filter((m) => m.sellDate === date) : []),
@@ -51,7 +53,14 @@ export function DayDetailSheet({
   )
 
   const dayOrderGroups = useMemo(
-    () => (date ? orderGroups.filter((og) => og.openDate === date) : []),
+    () =>
+      date
+        ? orderGroups.filter(
+            (og) =>
+              og.closeDate === date ||
+              (og.openDate === date && og.status === 'open')
+          )
+        : [],
     [orderGroups, date]
   )
 
@@ -120,29 +129,35 @@ export function DayDetailSheet({
             />
           </section>
 
-          {/* Journal Entries */}
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-              Journal Entries
-            </h3>
-            <DayJournalEntries
-              entries={dayEntries}
-              onEdit={onEditEntry}
-              onDelete={onDeleteEntry}
-            />
-          </section>
+          {/* Editor (replaces entries when active) or Journal Entries */}
+          {editorSlot ? (
+            <section>{editorSlot}</section>
+          ) : (
+            <section>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                Journal Entries
+              </h3>
+              <DayJournalEntries
+                entries={dayEntries}
+                onEdit={onEditEntry}
+                onDelete={onDeleteEntry}
+              />
+            </section>
+          )}
         </div>
 
-        {/* Footer: Add Entry */}
-        <SheetFooter className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-          <Button
-            className="w-full"
-            onClick={() => onAddEntry()}
-          >
-            <PlusCircle className="size-4 mr-2" />
-            Add Journal Entry
-          </Button>
-        </SheetFooter>
+        {/* Footer: Add Entry (hidden when editor is open) */}
+        {!editorSlot && (
+          <SheetFooter className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+            <Button
+              className="w-full"
+              onClick={() => onAddEntry()}
+            >
+              <PlusCircle className="size-4 mr-2" />
+              Add Journal Entry
+            </Button>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   )

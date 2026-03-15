@@ -117,16 +117,8 @@ export default function JournalPage() {
         onAddEntry={handleAddEntry}
         onEditEntry={handleEditEntry}
         onDeleteEntry={handleDeleteEntry}
-      />
-
-      {/* Inline Editor inside Sheet (rendered via portal) */}
-      {editor.mode !== 'closed' && sheetOpen && selectedDate && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={handleEditorCancel}
-          />
-          <div className="relative z-10 w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
+        editorSlot={
+          editor.mode !== 'closed' && selectedDate ? (
             <JournalEntryEditor
               tradeDate={editor.mode === 'create' ? editor.date : editor.entry.tradeDate}
               entry={editor.mode === 'edit' ? editor.entry : undefined}
@@ -134,9 +126,9 @@ export default function JournalPage() {
               onSave={handleEditorSave}
               onCancel={handleEditorCancel}
             />
-          </div>
-        </div>
-      )}
+          ) : undefined
+        }
+      />
     </div>
   )
 }
