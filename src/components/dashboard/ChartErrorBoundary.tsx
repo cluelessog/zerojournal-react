@@ -28,7 +28,7 @@ export class ChartErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div
-          className="flex items-center justify-center h-full min-h-[200px] rounded-lg bg-gray-50 border border-gray-200"
+          className="flex items-center justify-center h-full min-h-[200px] rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700"
           role="status"
           aria-label="Chart failed to load"
         >
