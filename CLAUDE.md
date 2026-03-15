@@ -1,3 +1,59 @@
+<!-- CC-PROJECT-FRAMEWORK-INTEGRATED -->
+
+## 🔴 MANDATORY: Read Before Any Work
+
+Before starting ANY task, you MUST:
+
+1. Read `docs/PLAN.md` — the current strategic plan and scope
+2. Read `docs/STATUS.md` — what's done, in progress, and blocked
+3. Read `docs/DECISIONS.md` — why things changed (if it exists)
+4. Read any spec files in `docs/specs/` — SDD artifacts live here
+
+If any of these files don't exist, create them.
+
+## 🔵 Status Reporting (AUTOMATIC — DO THIS ALWAYS)
+
+After completing any meaningful unit of work (feature, fix, task, subtask), you MUST
+update `docs/STATUS.md` by appending an entry in this format:
+
+```
+### [YYYY-MM-DD HH:MM] — {{summary}}
+- **Type**: feature | fix | refactor | research | planning
+- **Status**: completed | in-progress | blocked
+- **Files changed**: list of key files
+- **What was done**: 1-2 sentence description
+- **What's next**: 1-2 sentence description of immediate next step
+- **Blockers**: none | description of what's blocking
+```
+
+This is NON-NEGOTIABLE. The project dashboard depends on this file being current.
+
+## 🟡 Plan Hierarchy (IMPORTANT)
+
+```
+docs/PLAN.md              ← STRATEGIC (master, human-updated)
+  │                          Project direction, scope, phases, milestones.
+  │
+  └── .omc/plans/*        ← TACTICAL (per-feature, OMC-created)
+                             Implementation plans for specific features/tasks.
+```
+
+Rules:
+- ALWAYS read `docs/PLAN.md` first to understand project direction
+- NEVER contradict `docs/PLAN.md` in an OMC tactical plan — if conflict, PLAN.md wins
+- If the user gives a strategic change (scope, pivot, dropped feature), update `docs/PLAN.md`
+- `docs/PLAN.md` feeds the cross-project dashboard. `.omc/plans/` do not.
+
+## 🟠 Plan Change Protocol
+
+When new information arrives that changes the plan:
+
+1. Update `docs/PLAN.md` with the new plan
+2. Add an entry to `docs/DECISIONS.md` explaining what/why/impact
+3. Update `docs/STATUS.md` to reflect any tasks now invalid/blocked
+4. If tasks are in progress that conflict with the new plan, STOP and flag in STATUS.md
+
+<!-- END CC-PROJECT-FRAMEWORK -->
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -44,8 +100,8 @@ Excel files → Parser (Web Worker) → portfolio-store.importData() → Indexed
 - `src/lib/engine/` — Pure computation functions (analytics, FIFO matcher, timeline, insights, cumulative metrics). **No side effects.** Test these with unit tests.
 - `src/lib/parser/` — Excel parsing with Web Worker support. Normalizes Zerodha format to `RawTrade[]`.
 - `src/lib/store/` — Three Zustand stores: `portfolio-store` (trades, analytics, persistence), `ui-store` (filters, sidebar state, session-scoped), and `journal-store` (journal entries, CRUD via IndexedDB).
-- `src/lib/persistence/` — IndexedDB wrapper (DB version 4, four object stores: portfolio, metadata, settings, journal).
-- `src/lib/types/index.ts` — All shared TypeScript interfaces (~353 lines). Core types: `RawTrade`, `OrderGroup`, `SymbolPnL`, `TradeAnalytics`, `FIFOMatch`, `TimelinePoint`.
+- `src/lib/persistence/` — IndexedDB wrapper (DB version 5, four object stores: portfolio, metadata, settings, journal).
+- `src/lib/types/index.ts` — All shared TypeScript interfaces. Core types: `RawTrade`, `OrderGroup`, `SymbolPnL`, `TradeAnalytics`, `FIFOMatch`, `TimelinePoint`, `JournalEntry`.
 - `src/components/dashboard/` — Lazy-loaded chart components wrapped in `Suspense` + `ChartErrorBoundary`.
 - `src/components/ui/` — shadcn/ui primitives (do not modify manually — generated).
 - `src/pages/` — Route pages: Dashboard (tabs: Overview/Analytics/Trades), Trades, Analysis, Import, Journal.
