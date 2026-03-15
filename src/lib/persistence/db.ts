@@ -2,7 +2,7 @@ import { openDB as idbOpenDB, type IDBPDatabase } from 'idb'
 import type { PortfolioSnapshot, ImportMetadata, JournalEntry } from '@/lib/types'
 
 const DB_NAME = 'zerojournal'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 interface ZeroJournalDB {
   portfolio: {
@@ -61,6 +61,12 @@ export async function getDB(): Promise<IDBPDatabase<ZeroJournalDB>> {
           const journalStore = db.createObjectStore('journal', { keyPath: 'id' })
           journalStore.createIndex('by-date', 'tradeDate', { unique: false })
         }
+      }
+      // v5: adds setup/notes/orderGroupId fields to JournalEntry type
+      // No schema changes needed — IndexedDB is schemaless for field additions
+      // Existing entries will lack new fields; code normalizes undefined -> null
+      if (oldVersion < 5) {
+        // no-op: version bump only
       }
     },
   })
