@@ -1,82 +1,88 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { useJournalStore } from '@/lib/store/journal-store'
-import { JournalEditor } from '@/components/journal/JournalEditor'
-import { JournalList } from '@/components/journal/JournalList'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { JournalCalendar } from '@/components/journal/JournalCalendar'
+import { DayDetailSheet } from '@/components/journal/DayDetailSheet'
+import { JournalEntryEditor } from '@/components/journal/JournalEntryEditor'
+import type { JournalEntry } from '@/lib/types'
+
+type EditorState =
+  | { mode: 'closed' }
+  | { mode: 'create'; date: string; symbol?: string }
+  | { mode: 'edit'; date: string; entry: JournalEntry }
 
 export default function JournalPage() {
+  const trades = usePortfolioStore((s) => s.trades)
+  const orderGroups = usePortfolioStore((s) => s.orderGroups)
+  const analytics = usePortfolioStore((s) => s.analytics)
+  const fifoMatches = analytics?.fifoMatches ?? []
+
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
+  const deleteEntry = useJournalStore((s) => s.deleteEntry)
   const isLoading = useJournalStore((s) => s.isLoading)
   const error = useJournalStore((s) => s.error)
 
-  const [showEditor, setShowEditor] = useState(false)
-  const [dateFilter, setDateFilter] = useState('')
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [editor, setEditor] = useState<EditorState>({ mode: 'closed' })
 
   useEffect(() => {
     loadEntries()
   }, [loadEntries])
 
-  const filteredEntries = dateFilter
-    ? entries.filter((e) => e.tradeDate === dateFilter)
-    : entries
+  const handleDayClick = useCallback((date: string) => {
+    setSelectedDate(date)
+    setEditor({ mode: 'closed' })
+    setSheetOpen(true)
+  }, [])
+
+  const handleAddEntry = useCallback(
+    (symbol?: string) => {
+      if (!selectedDate) return
+      setEditor({ mode: 'create', date: selectedDate, symbol })
+    },
+    [selectedDate]
+  )
+
+  const handleEditEntry = useCallback((entry: JournalEntry) => {
+    setEditor({ mode: 'edit', date: entry.tradeDate, entry })
+  }, [])
+
+  const handleDeleteEntry = useCallback(
+    async (id: string) => {
+      await deleteEntry(id)
+    },
+    [deleteEntry]
+  )
+
+  const handleEditorSave = useCallback(() => {
+    setEditor({ mode: 'closed' })
+  }, [])
+
+  const handleEditorCancel = useCallback(() => {
+    setEditor({ mode: 'closed' })
+  }, [])
+
+  const handleSheetOpenChange = useCallback((open: boolean) => {
+    setSheetOpen(open)
+    if (!open) {
+      setEditor({ mode: 'closed' })
+      setSelectedDate(null)
+    }
+  }, [])
 
   return (
-    <div className="p-6 flex flex-col gap-6 max-w-3xl mx-auto">
+    <div className="p-4 sm:p-6 flex flex-col gap-5 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Trade Journal</h1>
-        {!showEditor && (
-          <Button size="sm" onClick={() => setShowEditor(true)}>
-            + Add Entry
-          </Button>
-        )}
-      </div>
-
-      {/* Inline editor for new entry */}
-      {showEditor && (
-        <JournalEditor
-          defaultDate={dateFilter || undefined}
-          onSaved={() => setShowEditor(false)}
-          onCancel={() => setShowEditor(false)}
-        />
-      )}
-
-      {/* Date filter */}
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col gap-1 flex-1 max-w-xs">
-          <label className="text-xs font-medium text-gray-600 dark:text-gray-400">
-            Filter by date
-          </label>
-          <Input
-            type="date"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-        {dateFilter && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-5 text-xs"
-            onClick={() => setDateFilter('')}
-          >
-            Clear filter
-          </Button>
-        )}
-      </div>
-
-      {/* Entry count */}
-      {!isLoading && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 -mt-3">
-          {filteredEntries.length === 0
-            ? 'No entries'
-            : `${filteredEntries.length} ${filteredEntries.length === 1 ? 'entry' : 'entries'}`}
-          {dateFilter ? ` for ${dateFilter}` : ' total'}
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+          Trade Journal
+        </h1>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          Click any day to view trades and add journal entries
         </p>
-      )}
+      </div>
 
       {/* Error */}
       {error && (
@@ -91,7 +97,45 @@ export default function JournalPage() {
           Loading entries…
         </div>
       ) : (
-        <JournalList entries={filteredEntries} />
+        <JournalCalendar
+          trades={trades}
+          orderGroups={orderGroups}
+          fifoMatches={fifoMatches}
+          journalEntries={entries}
+          onDayClick={handleDayClick}
+        />
+      )}
+
+      {/* Day Detail Sheet */}
+      <DayDetailSheet
+        date={selectedDate}
+        open={sheetOpen}
+        onOpenChange={handleSheetOpenChange}
+        fifoMatches={fifoMatches}
+        orderGroups={orderGroups}
+        journalEntries={entries}
+        onAddEntry={handleAddEntry}
+        onEditEntry={handleEditEntry}
+        onDeleteEntry={handleDeleteEntry}
+      />
+
+      {/* Inline Editor inside Sheet (rendered via portal) */}
+      {editor.mode !== 'closed' && sheetOpen && selectedDate && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={handleEditorCancel}
+          />
+          <div className="relative z-10 w-full max-w-md mx-4 mb-4 sm:mb-0 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-xl">
+            <JournalEntryEditor
+              tradeDate={editor.mode === 'create' ? editor.date : editor.entry.tradeDate}
+              entry={editor.mode === 'edit' ? editor.entry : undefined}
+              prefilledSymbol={editor.mode === 'create' ? editor.symbol : undefined}
+              onSave={handleEditorSave}
+              onCancel={handleEditorCancel}
+            />
+          </div>
+        </div>
       )}
     </div>
   )
