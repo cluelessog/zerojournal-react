@@ -101,10 +101,10 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as 'overview' | 'analytics' | 'trades')}>
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="trades">Trades</TabsTrigger>
+        <TabsList className="overflow-x-auto flex-shrink-0 flex-nowrap">
+          <TabsTrigger value="overview" className="flex-shrink-0">Overview</TabsTrigger>
+          <TabsTrigger value="analytics" className="flex-shrink-0">Analytics</TabsTrigger>
+          <TabsTrigger value="trades" className="flex-shrink-0">Trades</TabsTrigger>
         </TabsList>
 
         {/* ── Overview Tab ─────────────────────────────────────────────── */}

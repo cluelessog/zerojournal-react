@@ -147,11 +147,13 @@ export default function TradesPage() {
       )}
 
       {/* Table */}
-      <TradesTable
-        trades={filteredTrades}
-        symbolPnLMap={symbolPnLMap}
-        groupBy={groupBy}
-      />
+      <div className="overflow-x-auto">
+        <TradesTable
+          trades={filteredTrades}
+          symbolPnLMap={symbolPnLMap}
+          groupBy={groupBy}
+        />
+      </div>
     </div>
   )
 }

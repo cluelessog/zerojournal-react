@@ -36,11 +36,11 @@ export default function AnalysisPage() {
       <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Analysis</h1>
 
       <Tabs defaultValue="performance">
-        <TabsList className="mb-4">
-          <TabsTrigger value="performance">Symbol Performance</TabsTrigger>
-          <TabsTrigger value="charges">Charges</TabsTrigger>
-          <TabsTrigger value="open">Open Positions</TabsTrigger>
-          <TabsTrigger value="crossref">Cross-Reference</TabsTrigger>
+        <TabsList className="mb-4 overflow-x-auto flex-shrink-0 flex-nowrap">
+          <TabsTrigger value="performance" className="flex-shrink-0">Symbol Performance</TabsTrigger>
+          <TabsTrigger value="charges" className="flex-shrink-0">Charges</TabsTrigger>
+          <TabsTrigger value="open" className="flex-shrink-0">Open Positions</TabsTrigger>
+          <TabsTrigger value="crossref" className="flex-shrink-0">Cross-Reference</TabsTrigger>
         </TabsList>
 
         <TabsContent value="performance">
