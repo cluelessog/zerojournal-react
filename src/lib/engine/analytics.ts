@@ -385,14 +385,20 @@ export function calculateMinDrawup(
 /**
  * Calculate win/loss streak metrics using SymbolPnL as the authoritative P&L source.
  *
+ * Measures consecutive profitable/unprofitable **trading days** (not individual positions).
  * Each closed position's realizedPnL is attributed to its close date (last sell date).
  * Multiple positions closing on the same date are summed.
- * Day with summed realizedPnL > 0 = win, <= 0 = loss.
+ * Day with summed realizedPnL > 0 = win, < 0 = loss.
+ * Breakeven days (summed realizedPnL === 0) are excluded — they do not count as
+ * wins or losses and do not break an active streak.
  *
  * Tracks:
  * - longestWinStreak: maximum consecutive win days
  * - longestLossStreak: maximum consecutive loss days
  * - currentStreak: type and count from the most recent close date backward
+ *
+ * Note: This differs from `computeStreaksFromMatches` which measures consecutive
+ * winning/losing **positions** (individual FIFO matches), not trading days.
  */
 export function calculateStreaks(
   symbolPnL: SymbolPnL[],
@@ -402,7 +408,7 @@ export function calculateStreaks(
   const empty: StreakMetric = {
     longestWinStreak: 0,
     longestLossStreak: 0,
-    currentStreak: { type: 'win', count: 0 },
+    currentStreak: { type: null, count: 0 },
   }
   if (symbolPnL.length === 0 || trades.length === 0) return empty
 
@@ -412,11 +418,16 @@ export function calculateStreaks(
 
   if (dailyMap.size === 0) return empty
 
-  // Sort dates and classify each day as win or loss
+  // Sort dates and classify each day as win or loss, filtering out breakeven days
   const sortedDates = Array.from(dailyMap.keys()).sort()
-  const results: Array<'win' | 'loss'> = sortedDates.map((date) =>
-    (dailyMap.get(date)! > 0 ? 'win' : 'loss')
-  )
+  const results: Array<'win' | 'loss'> = []
+  for (const date of sortedDates) {
+    const pnl = dailyMap.get(date)!
+    if (pnl === 0) continue // breakeven days don't count
+    results.push(pnl > 0 ? 'win' : 'loss')
+  }
+
+  if (results.length === 0) return empty
 
   let longestWin = 0
   let longestLoss = 0
@@ -846,20 +857,29 @@ export interface StyleStreakResult {
   swing: StreakMetric | null
 }
 
+/**
+ * Compute streak metrics from individual FIFO matches (consecutive winning/losing **positions**).
+ *
+ * Unlike `calculateStreaks` which measures consecutive profitable trading days,
+ * this function measures consecutive winning or losing individual FIFO-matched
+ * positions. Breakeven matches (pnl === 0) are skipped — they do not count as
+ * wins or losses and do not break an active streak.
+ */
 function computeStreaksFromMatches(matches: FIFOMatch[]): StreakMetric {
   const empty: StreakMetric = {
     longestWinStreak: 0,
     longestLossStreak: 0,
-    currentStreak: { type: 'win', count: 0 },
+    currentStreak: { type: null, count: 0 },
   }
   if (matches.length === 0) return empty
 
   let longestWin = 0
   let longestLoss = 0
-  let currentType: 'win' | 'loss' = matches[0].pnl > 0 ? 'win' : 'loss'
+  let currentType: 'win' | 'loss' | null = null
   let currentCount = 0
 
   for (const m of matches) {
+    if (m.pnl === 0) continue // breakeven matches don't count
     const type: 'win' | 'loss' = m.pnl > 0 ? 'win' : 'loss'
     if (type === currentType) {
       currentCount++
@@ -878,11 +898,20 @@ function computeStreaksFromMatches(matches: FIFOMatch[]): StreakMetric {
   }
 }
 
+/**
+ * Calculate streaks split by trading style (intraday vs swing).
+ *
+ * Results differ from `calculateStreaks` by design: this function measures
+ * consecutive winning/losing individual FIFO positions (via `computeStreaksFromMatches`),
+ * while `calculateStreaks` measures consecutive profitable trading days.
+ */
 export function calculateStreaksByStyle(
   fifoMatches: FIFOMatch[],
   minTradesForStyleStreak: number = 20,
 ): StyleStreakResult {
-  const sorted = [...fifoMatches].sort((a, b) => a.sellDate.localeCompare(b.sellDate))
+  const sorted = [...fifoMatches].sort((a, b) =>
+    a.sellDate.localeCompare(b.sellDate) || a.symbol.localeCompare(b.symbol)
+  )
   const intraday = sorted.filter((m) => m.holdingDays === 0)
   const swing = sorted.filter((m) => m.holdingDays > 0)
 

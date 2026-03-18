@@ -251,11 +251,11 @@ export default function DashboardPage() {
                   <div className="text-sm text-gray-600 dark:text-gray-400">Current Streak</div>
                   <div
                     className={`mt-1 text-2xl font-bold ${
-                      analytics.streaks.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'
+                      analytics.streaks.currentStreak.type === 'win' ? 'text-green-600' : analytics.streaks.currentStreak.type === 'loss' ? 'text-red-600' : 'text-gray-500'
                     }`}
                   >
                     {analytics.streaks.currentStreak.count}{' '}
-                    {analytics.streaks.currentStreak.type === 'win' ? 'W' : 'L'}
+                    {analytics.streaks.currentStreak.type === 'win' ? 'W' : analytics.streaks.currentStreak.type === 'loss' ? 'L' : '-'}
                   </div>
                 </div>
               </div>
@@ -279,8 +279,8 @@ export default function DashboardPage() {
                       </div>
                       <div className="rounded-lg border p-3">
                         <div className="text-xs text-gray-600 dark:text-gray-400">Current</div>
-                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.intraday.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'}`}>
-                          {styleStreaks.intraday.currentStreak.count} {styleStreaks.intraday.currentStreak.type === 'win' ? 'W' : 'L'}
+                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.intraday.currentStreak.type === 'win' ? 'text-green-600' : styleStreaks.intraday.currentStreak.type === 'loss' ? 'text-red-600' : 'text-gray-500'}`}>
+                          {styleStreaks.intraday.currentStreak.count} {styleStreaks.intraday.currentStreak.type === 'win' ? 'W' : styleStreaks.intraday.currentStreak.type === 'loss' ? 'L' : '-'}
                         </div>
                       </div>
                     </div>
@@ -300,8 +300,8 @@ export default function DashboardPage() {
                       </div>
                       <div className="rounded-lg border p-3">
                         <div className="text-xs text-gray-600 dark:text-gray-400">Current</div>
-                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.swing.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'}`}>
-                          {styleStreaks.swing.currentStreak.count} {styleStreaks.swing.currentStreak.type === 'win' ? 'W' : 'L'}
+                        <div className={`mt-0.5 text-lg font-bold ${styleStreaks.swing.currentStreak.type === 'win' ? 'text-green-600' : styleStreaks.swing.currentStreak.type === 'loss' ? 'text-red-600' : 'text-gray-500'}`}>
+                          {styleStreaks.swing.currentStreak.count} {styleStreaks.swing.currentStreak.type === 'win' ? 'W' : styleStreaks.swing.currentStreak.type === 'loss' ? 'L' : '-'}
                         </div>
                       </div>
                     </div>

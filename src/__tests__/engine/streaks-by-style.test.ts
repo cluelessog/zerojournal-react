@@ -69,4 +69,51 @@ describe('calculateStreaksByStyle', () => {
     expect(result.swing!.longestLossStreak).toBe(3)
     expect(result.overall).toBeDefined()
   })
+
+  it('empty overall returns currentStreak.type as null', () => {
+    const result = calculateStreaksByStyle([])
+    expect(result.overall.currentStreak.type).toBeNull()
+    expect(result.overall.currentStreak.count).toBe(0)
+  })
+
+  it('breakeven matches are skipped and do not break streaks', () => {
+    // W, W, breakeven, W, L — breakeven should not break the win streak
+    const matches: FIFOMatch[] = [
+      makeMatch(100, 0, '2024-01-01'),
+      makeMatch(200, 0, '2024-01-02'),
+      makeMatch(0, 0, '2024-01-03'),   // breakeven — skipped
+      makeMatch(150, 0, '2024-01-04'),
+      makeMatch(-50, 0, '2024-01-05'),
+    ]
+    // Need 20+ for style-specific, so test via overall
+    const result = calculateStreaksByStyle(matches, 0) // minTrades=0 so style streaks compute
+    expect(result.overall.longestWinStreak).toBe(3) // W W W (breakeven skipped)
+    expect(result.overall.longestLossStreak).toBe(1)
+    expect(result.overall.currentStreak.type).toBe('loss')
+  })
+
+  it('all breakeven matches returns null type', () => {
+    const matches: FIFOMatch[] = [
+      makeMatch(0, 0, '2024-01-01'),
+      makeMatch(0, 0, '2024-01-02'),
+    ]
+    const result = calculateStreaksByStyle(matches, 0)
+    expect(result.overall.longestWinStreak).toBe(0)
+    expect(result.overall.longestLossStreak).toBe(0)
+    expect(result.overall.currentStreak.type).toBeNull()
+    expect(result.overall.currentStreak.count).toBe(0)
+  })
+
+  it('same-date matches are sorted deterministically by symbol', () => {
+    // Two matches on the same date with different symbols — order should be deterministic
+    const matchA: FIFOMatch = { symbol: 'AAA', buyDate: '2024-01-01', sellDate: '2024-01-01', quantity: 1, buyPrice: 100, sellPrice: 110, pnl: 10, holdingDays: 0 }
+    const matchB: FIFOMatch = { symbol: 'BBB', buyDate: '2024-01-01', sellDate: '2024-01-01', quantity: 1, buyPrice: 100, sellPrice: 90, pnl: -10, holdingDays: 0 }
+    // Regardless of input order, result should be the same
+    const result1 = calculateStreaksByStyle([matchA, matchB], 0)
+    const result2 = calculateStreaksByStyle([matchB, matchA], 0)
+    expect(result1.overall.longestWinStreak).toBe(result2.overall.longestWinStreak)
+    expect(result1.overall.longestLossStreak).toBe(result2.overall.longestLossStreak)
+    expect(result1.overall.currentStreak.type).toBe(result2.overall.currentStreak.type)
+    expect(result1.overall.currentStreak.count).toBe(result2.overall.currentStreak.count)
+  })
 })
