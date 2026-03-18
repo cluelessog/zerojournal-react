@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import { useJournalStore } from '@/lib/store/journal-store'
+import { buildTimeline } from '@/lib/engine/timeline'
 import { JournalCalendar } from '@/components/journal/JournalCalendar'
 import { DayDetailSheet } from '@/components/journal/DayDetailSheet'
 import { JournalEntryEditor } from '@/components/journal/JournalEntryEditor'
@@ -14,8 +15,17 @@ type EditorState =
 export default function JournalPage() {
   const trades = usePortfolioStore((s) => s.trades)
   const orderGroups = usePortfolioStore((s) => s.orderGroups)
+  const symbolPnL = usePortfolioStore((s) => s.symbolPnL)
+  const pnlSummary = usePortfolioStore((s) => s.pnlSummary)
   const analytics = usePortfolioStore((s) => s.analytics)
   const fifoMatches = analytics?.fifoMatches ?? []
+
+  // Same pattern as PnLBarCharts: buildTimeline with charges for authoritative P&L
+  const totalCharges = pnlSummary?.charges.total ?? 0
+  const timeline = useMemo(
+    () => buildTimeline(trades, symbolPnL, 'daily', totalCharges),
+    [trades, symbolPnL, totalCharges]
+  )
 
   const loadEntries = useJournalStore((s) => s.loadEntries)
   const entries = useJournalStore((s) => s.entries)
@@ -100,7 +110,7 @@ export default function JournalPage() {
         <JournalCalendar
           trades={trades}
           orderGroups={orderGroups}
-          fifoMatches={fifoMatches}
+          timeline={timeline}
           journalEntries={entries}
           onDayClick={handleDayClick}
         />

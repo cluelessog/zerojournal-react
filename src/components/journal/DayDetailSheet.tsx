@@ -2,13 +2,13 @@ import { useMemo, type ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import { PlusCircle } from 'lucide-react'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { TradeBubbleDiagram } from '@/components/journal/TradeBubbleDiagram'
 import { DayJournalEntries } from '@/components/journal/DayJournalEntries'
@@ -91,20 +91,20 @@ export function DayDetailSheet({
       : 'text-gray-500 dark:text-gray-400'
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-lg flex flex-col overflow-hidden p-0">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden p-0">
         {/* Header */}
-        <SheetHeader className="px-4 pt-5 pb-3 border-b border-gray-200 dark:border-gray-700">
-          <SheetTitle className="text-base font-semibold leading-tight">
+        <DialogHeader className="px-5 pt-5 pb-3 border-b border-gray-200 dark:border-gray-700">
+          <DialogTitle className="text-base font-semibold leading-tight">
             {formattedDate}
-          </SheetTitle>
-          <SheetDescription className="flex items-center gap-3 text-sm">
+          </DialogTitle>
+          <DialogDescription className="flex items-center gap-3 text-sm">
             {dayFifoMatches.length > 0 || dayOrderGroups.length > 0 ? (
               <>
                 <span className={pnlColor}>
                   {pnlSign}{formatRs(totalPnL)}
                 </span>
-                <span className="text-gray-400 dark:text-gray-600">·</span>
+                <span className="text-gray-400 dark:text-gray-600">&middot;</span>
                 <span>
                   {tradeCount} {tradeCount === 1 ? 'trade' : 'trades'}
                 </span>
@@ -112,11 +112,11 @@ export function DayDetailSheet({
             ) : (
               <span>No trades on this day</span>
             )}
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-5">
           {/* Trade Bubbles */}
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
@@ -148,7 +148,7 @@ export function DayDetailSheet({
 
         {/* Footer: Add Entry (hidden when editor is open) */}
         {!editorSlot && (
-          <SheetFooter className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+          <DialogFooter className="px-5 py-3 border-t border-gray-200 dark:border-gray-700">
             <Button
               className="w-full"
               onClick={() => onAddEntry()}
@@ -156,9 +156,9 @@ export function DayDetailSheet({
               <PlusCircle className="size-4 mr-2" />
               Add Journal Entry
             </Button>
-          </SheetFooter>
+          </DialogFooter>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   )
 }
