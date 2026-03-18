@@ -421,6 +421,7 @@ describe('calculateStreaks', () => {
     const result = calculateStreaks([], [])
     expect(result.longestWinStreak).toBe(0)
     expect(result.longestLossStreak).toBe(0)
+    expect(result.currentStreak.type).toBeNull()
     expect(result.currentStreak.count).toBe(0)
   })
 
@@ -514,6 +515,35 @@ describe('calculateStreaks', () => {
     expect(result.longestLossStreak).toBe(0)
     expect(result.currentStreak.type).toBe('win')
     expect(result.currentStreak.count).toBe(1)
+  })
+
+  it('skips breakeven days — they do not count as wins or losses', () => {
+    // W, breakeven, W → breakeven is skipped, streak stays 2 wins
+    const { symbolPnL, trades } = makeStreakInputs([100, 0, 200])
+    const result = calculateStreaks(symbolPnL, trades)
+    expect(result.longestWinStreak).toBe(2)
+    expect(result.longestLossStreak).toBe(0)
+    expect(result.currentStreak.type).toBe('win')
+    expect(result.currentStreak.count).toBe(2)
+  })
+
+  it('does not break a streak with breakeven days', () => {
+    // W, W, breakeven, W, L → win streak of 3 (breakeven doesn't break it)
+    const { symbolPnL, trades } = makeStreakInputs([100, 200, 0, 150, -50])
+    const result = calculateStreaks(symbolPnL, trades)
+    expect(result.longestWinStreak).toBe(3)
+    expect(result.longestLossStreak).toBe(1)
+    expect(result.currentStreak.type).toBe('loss')
+    expect(result.currentStreak.count).toBe(1)
+  })
+
+  it('returns null type when all days are breakeven', () => {
+    const { symbolPnL, trades } = makeStreakInputs([0, 0, 0])
+    const result = calculateStreaks(symbolPnL, trades)
+    expect(result.longestWinStreak).toBe(0)
+    expect(result.longestLossStreak).toBe(0)
+    expect(result.currentStreak.type).toBeNull()
+    expect(result.currentStreak.count).toBe(0)
   })
 })
 

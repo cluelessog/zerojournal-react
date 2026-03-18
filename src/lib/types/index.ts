@@ -93,7 +93,7 @@ export interface StreakMetric {
   longestWinStreak: number
   longestLossStreak: number
   currentStreak: {
-    type: 'win' | 'loss'
+    type: 'win' | 'loss' | null
     count: number
   }
 }
