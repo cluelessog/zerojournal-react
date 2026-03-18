@@ -98,6 +98,12 @@ export interface StreakMetric {
   }
 }
 
+export interface StyleStreakResult {
+  overall: StreakMetric
+  intraday: StreakMetric | null
+  swing: StreakMetric | null
+}
+
 export interface MonthlyMetric {
   month: string       // YYYY-MM format
   trades: number
@@ -207,6 +213,7 @@ export interface TradeAnalytics {
   riskReward: RiskRewardMetric
   rollingExpectancy: RollingExpectancyPoint[]
   tradingStyles: TradingStyleResult
+  styleStreaks: StyleStreakResult
 }
 
 // ─── Insight Types ──────────────────────────────────────────────────────────

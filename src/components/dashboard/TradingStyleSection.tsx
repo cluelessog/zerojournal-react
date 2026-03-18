@@ -9,7 +9,7 @@ const STYLE_LABELS: Array<{ key: keyof Pick<TradingStyleResult, 'intraday' | 'bt
   { key: 'intraday', label: 'Intraday', description: '0 days' },
   { key: 'btst', label: 'BTST', description: '1 day' },
   { key: 'velocity', label: 'Velocity', description: '2-4 days' },
-  { key: 'swing', label: 'Swing', description: '>4 days' },
+  { key: 'swing', label: 'Swing', description: '>0 days (incl. BTST & Velocity)' },
 ]
 
 function StyleCard({

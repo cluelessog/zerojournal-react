@@ -1,4 +1,4 @@
-import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics } from '@/lib/types'
+import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics, StyleStreakResult } from '@/lib/types'
 import { matchTradesWithPnL, sortMatchesChronologically } from '@/lib/engine/fifo-matcher'
 
 /** Number of trading days per year used for Sharpe Ratio annualization. */
@@ -584,8 +584,9 @@ export function calculateMonthlyBreakdown(
 
     // Win rate from closed symbol P&L attributed to close month (same cohort as P&L)
     const winners = closedSymbols.filter((s) => s.realizedPnL > 0).length
-    const total = closedSymbols.length
-    const winRate = total > 0 ? (winners / total) * 100 : 0
+    const losers = closedSymbols.filter((s) => s.realizedPnL < 0).length
+    const decisive = winners + losers  // breakeven excluded per convention
+    const winRate = decisive > 0 ? (winners / decisive) * 100 : 0
 
     // Per-month max drawdown using the high-water-mark algorithm on NET cumulative series.
     // Data source: SymbolPnL.realizedPnL for positions closing within this month,
@@ -742,10 +743,12 @@ function buildStyleMetrics(matches: FIFOMatch[]): TradingStyleMetrics {
     return { count: 0, winRate: 0, avgPnL: 0, totalPnL: 0 }
   }
   const wins = matches.filter((m) => m.pnl > 0).length
+  const losses = matches.filter((m) => m.pnl < 0).length
+  const decisive = wins + losses  // breakeven excluded per convention
   const totalPnL = matches.reduce((s, m) => s + m.pnl, 0)
   return {
     count: matches.length,
-    winRate: (wins / matches.length) * 100,
+    winRate: decisive > 0 ? (wins / decisive) * 100 : 0,
     avgPnL: totalPnL / matches.length,
     totalPnL,
   }
@@ -753,8 +756,9 @@ function buildStyleMetrics(matches: FIFOMatch[]): TradingStyleMetrics {
 
 /**
  * Classify FIFO matches into trading styles based on holding days.
- * Categories: Intraday (0 days), BTST (1 day), Velocity (2-4 days), Swing (>4 days)
+ * Categories: Intraday (0 days), BTST (1 day, subcategory of Swing), Velocity (2-4 days, subcategory of Swing), Swing (>0 days)
  *
+ * Swing encompasses all overnight positions (BTST and Velocity are informational subcategories).
  * Best/worst style determined by avgPnL, requiring MIN_TRADES_FOR_RECOMMENDATION (3)
  * trades per category. Need at least 2 qualifying styles to pick best/worst.
  *
@@ -764,7 +768,7 @@ export function classifyTradingStyles(matches: FIFOMatch[]): TradingStyleResult 
   const intraday = matches.filter((m) => m.holdingDays === 0)
   const btst = matches.filter((m) => m.holdingDays === 1)
   const velocity = matches.filter((m) => m.holdingDays >= 2 && m.holdingDays <= 4)
-  const swing = matches.filter((m) => m.holdingDays > 4)
+  const swing = matches.filter((m) => m.holdingDays > 0)
 
   const result: TradingStyleResult = {
     intraday: buildStyleMetrics(intraday),
@@ -851,12 +855,6 @@ export interface AnalyticsInput {
 
 // ─── Streaks by Trading Style ────────────────────────────────────────────────
 
-export interface StyleStreakResult {
-  overall: StreakMetric
-  intraday: StreakMetric | null
-  swing: StreakMetric | null
-}
-
 /**
  * Compute streak metrics from individual FIFO matches (consecutive winning/losing **positions**).
  *
@@ -900,6 +898,9 @@ function computeStreaksFromMatches(matches: FIFOMatch[]): StreakMetric {
 
 /**
  * Calculate streaks split by trading style (intraday vs swing).
+ *
+ * - Intraday: holdingDays === 0 (same-day round trip)
+ * - Swing: holdingDays > 0 (any position held overnight or longer, including BTST and Velocity)
  *
  * Results differ from `calculateStreaks` by design: this function measures
  * consecutive winning/losing individual FIFO positions (via `computeStreaksFromMatches`),
@@ -949,8 +950,8 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
   const losingTrades = losers.length
   const breakEvenTrades = breakEven.length
 
-  const totalClosed = winningTrades + losingTrades + breakEvenTrades
-  const winRate = totalClosed > 0 ? (winningTrades / totalClosed) * 100 : 0
+  const totalDecisive = winningTrades + losingTrades  // breakeven excluded per convention
+  const winRate = totalDecisive > 0 ? (winningTrades / totalDecisive) * 100 : 0
 
   // --- Avg win / avg loss ---
   const totalWinPnL = winners.reduce((sum, s) => sum + s.realizedPnL, 0)
@@ -1021,6 +1022,7 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
 
   // --- Sprint 4 analytics ---
   const tradingStyles = classifyTradingStyles(fifoMatches)
+  const styleStreaks = calculateStreaksByStyle(fifoMatches)
 
   // Merge monthly expectancy into monthlyBreakdown
   const monthlyExpectancyMap = calculateMonthlyExpectancy(fifoMatches)
@@ -1065,5 +1067,6 @@ export function computeAnalytics({ trades, symbolPnL, pnlSummary, orderGroups }:
     riskReward,
     rollingExpectancy,
     tradingStyles,
+    styleStreaks,
   }
 }

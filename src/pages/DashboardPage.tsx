@@ -11,7 +11,6 @@ import { ChartErrorBoundary } from '@/components/dashboard/ChartErrorBoundary'
 import { CapitalInput } from '@/components/dashboard/CapitalInput'
 import { KeyInsights } from '@/components/dashboard/KeyInsights'
 import { generateInsights } from '@/lib/engine/insights'
-import { calculateStreaksByStyle } from '@/lib/engine/analytics'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 const PnLTimelineChart = lazy(() =>
@@ -64,10 +63,7 @@ export default function DashboardPage() {
     return generateInsights(analytics)
   }, [analytics])
 
-  const styleStreaks = useMemo(() => {
-    if (!analytics) return null
-    return calculateStreaksByStyle(analytics.fifoMatches)
-  }, [analytics])
+  const styleStreaks = analytics?.styleStreaks ?? null
 
   const monthTradeCounts = useMemo(() => {
     const map = new Map<string, number>()
@@ -233,7 +229,7 @@ export default function DashboardPage() {
 
             {/* Row 2: Win/Loss Streaks */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Win/Loss Streaks</h3>
+              <h3 className="text-lg font-semibold">Win/Loss Streaks (by trading day)</h3>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="rounded-lg border p-4">
                   <div className="text-sm text-gray-600 dark:text-gray-400">Longest Win Streak</div>
@@ -264,7 +260,7 @@ export default function DashboardPage() {
             {/* Row 2b: Streaks by Trading Style */}
             {styleStreaks && (styleStreaks.intraday || styleStreaks.swing) ? (
               <div className="space-y-3">
-                <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">By Trading Style</h4>
+                <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">By Trading Style (consecutive positions)</h4>
                 {styleStreaks.intraday && (
                   <div>
                     <p className="mb-2 text-xs font-medium text-gray-500">Intraday</p>
