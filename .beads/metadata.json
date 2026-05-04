@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "zerojournal_react",
+  "project_id": "b37136c6-f1e7-43fd-a4d3-0a0d484d39c4"
+}
