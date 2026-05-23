@@ -1,5 +1,6 @@
 import type { RawTrade, TradeAnalytics, DrawdownMetric, StreakMetric, MonthlyMetric, PnLSummary, SymbolPnL, OrderGroup, FIFOMatch, ExpectancyMetric, ExpectancyBreakdown, RiskRewardMetric, RiskRewardBreakdown, RollingExpectancyPoint, TradingStyleResult, TradingStyleMetrics, StyleStreakResult } from '@/lib/types'
 import { matchTradesWithPnL, sortMatchesChronologically } from '@/lib/engine/fifo-matcher'
+import { dateDiffDays } from '@/lib/engine/date-utils'
 
 /** Number of trading days per year used for Sharpe Ratio annualization. */
 const TRADING_DAYS_PER_YEAR = 252
@@ -48,9 +49,11 @@ export function calculateSharpeRatio(
   let totalTurnover = 0
   for (const v of dailyTurnover.values()) totalTurnover += v
 
-  // Compute percentage returns for each sell date with realized P&L.
+  // Compute percentage returns for each sell date with realized P&L,
+  // then expand with zeros for trading days between closes so that swing
+  // holding days are represented and sqrt(252) annualization stays valid.
   const sortedDates = Array.from(dailyPnL.keys()).sort()
-  const returns: number[] = []
+  const sellDateReturns: { date: string; ret: number }[] = []
 
   for (const date of sortedDates) {
     const grossPnL = dailyPnL.get(date)!
@@ -60,8 +63,20 @@ export function calculateSharpeRatio(
 
     const capital = dailyCapital.get(date) ?? 0
     if (capital > 0) {
-      returns.push(netPnL / capital)
+      sellDateReturns.push({ date, ret: netPnL / capital })
     }
+  }
+
+  if (sellDateReturns.length < 2) return 0
+
+  // Expand: insert zeros for trading days between consecutive sell dates.
+  // Approximates 5 trading days per 7 calendar days (no market calendar needed).
+  const returns: number[] = [sellDateReturns[0].ret]
+  for (let i = 1; i < sellDateReturns.length; i++) {
+    const calGap = dateDiffDays(sellDateReturns[i - 1].date, sellDateReturns[i].date) - 1
+    const tradingGap = Math.round(calGap * 5 / 7)
+    for (let j = 0; j < tradingGap; j++) returns.push(0)
+    returns.push(sellDateReturns[i].ret)
   }
 
   if (returns.length < 2) return 0

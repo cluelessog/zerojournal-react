@@ -43,12 +43,18 @@ Day 1: Buy 100 @ INR 500 (capital = 50,000), sell @ INR 502
   Daily P&L = 200
   Daily return = 200 / 50,000 = 0.004 (0.4%)
 
-Day 2: Identical
-  Daily return = 0.004
+Day 2: Buy 100 @ INR 500 (capital = 50,000), sell @ INR 502.5
+  Daily P&L = 250
+  Daily return = 250 / 50,000 = 0.005 (0.5%)
 
-Sharpe = ((0.004 - 0.02/252) / std(0.004, 0.004)) × √252
-       ≈ 7.99 (very high, since volatility is near zero)
+mean(R) = (0.004 + 0.005) / 2 = 0.0045
+std(R)  = sqrt(((0.004-0.0045)² + (0.005-0.0045)²) / 1) ≈ 0.000707
+daily Rf = 0.02 / 252 ≈ 0.0000794
+
+Sharpe = ((0.0045 - 0.0000794) / 0.000707) × √252 ≈ 7.99
 ```
+
+Note: identical daily returns produce std = 0, which returns Sharpe = 0 per the edge case above.
 
 ### Industry Standards
 

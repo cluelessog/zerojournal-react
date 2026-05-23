@@ -1236,6 +1236,49 @@ describe('calculateSharpeRatio — behavioral correctness', () => {
     expect(sharpe0).toBeGreaterThan(sharpe5)
     expect(sharpe5).toBeGreaterThan(sharpe10)
   })
+
+  // Test 5: Swing trader has lower Sharpe than intraday with same per-close P&L.
+  // Holding-day zeros dilute the mean return, correctly penalising swing exposure.
+  it('swing trader (10-day holds) has lower Sharpe than intraday with same per-close returns', () => {
+    const pnls = [100, 150, 120, 180, 110]  // varying, all profitable
+
+    // Intraday: buy+sell on the same day for 5 consecutive days — no gaps, no zeros inserted
+    const intradayTrades: RawTrade[] = []
+    for (let i = 0; i < pnls.length; i++) {
+      const d = new Date('2025-01-01')
+      d.setDate(d.getDate() + i)
+      const date = d.toISOString().split('T')[0]
+      const qty = 10
+      intradayTrades.push(
+        makeTrade({ isin: 'INE100A01001', tradeDate: date, tradeType: 'buy', price: 100, quantity: qty, orderExecutionTime: `${date}T09:00:00` }),
+        makeTrade({ isin: 'INE100A01001', tradeDate: date, tradeType: 'sell', price: 100 + pnls[i] / qty, quantity: qty, orderExecutionTime: `${date}T15:00:00` }),
+      )
+    }
+
+    // Swing: same pnls but buy on day 1/11/21/31/41, sell on day 11/21/31/41/51 (~10-day gaps)
+    // Zeros for holding days are inserted between sell dates by the fix.
+    const swingTrades: RawTrade[] = []
+    for (let i = 0; i < pnls.length; i++) {
+      const buyD = new Date('2025-01-01'); buyD.setDate(buyD.getDate() + i * 10)
+      const sellD = new Date(buyD);        sellD.setDate(sellD.getDate() + 10)
+      const buyDate  = buyD.toISOString().split('T')[0]
+      const sellDate = sellD.toISOString().split('T')[0]
+      const qty = 10
+      swingTrades.push(
+        makeTrade({ isin: 'INE200A01001', tradeDate: buyDate,  tradeType: 'buy',  price: 100, quantity: qty, orderExecutionTime: `${buyDate}T09:00:00` }),
+        makeTrade({ isin: 'INE200A01001', tradeDate: sellDate, tradeType: 'sell', price: 100 + pnls[i] / qty, quantity: qty, orderExecutionTime: `${sellDate}T15:00:00` }),
+      )
+    }
+
+    const intradaySharpe = sharpeFromTrades(intradayTrades)
+    const swingSharpe    = sharpeFromTrades(swingTrades)
+
+    // Both should be positive (all P&Ls profitable)
+    expect(intradaySharpe).toBeGreaterThan(0)
+    expect(swingSharpe).toBeGreaterThan(0)
+    // Swing Sharpe is lower because holding-day zeros dilute the mean return
+    expect(swingSharpe).toBeLessThan(intradaySharpe)
+  })
 })
 
 describe('Drawdown Without Capital (Absolute INR Mode)', () => {
