@@ -100,8 +100,8 @@ function makeAnalytics(overrides: Partial<TradeAnalytics> = {}): TradeAnalytics 
       btst: { count: 5, winRate: 40, avgPnL: 50, totalPnL: 250 },
       velocity: { count: 3, winRate: 33, avgPnL: 30, totalPnL: 90 },
       swing: { count: 17, winRate: 47, avgPnL: 80, totalPnL: 1360 },
-      bestStyle: 'intraday',
-      worstStyle: 'velocity',
+      bestStyle: 'Intraday',
+      worstStyle: 'Velocity',
     },
   }
 
@@ -249,13 +249,14 @@ describe('generateInsights', () => {
   })
 
   it('fires best style recommendation when bestStyle is not null', () => {
-    const analytics = makeAnalytics() // defaults have bestStyle: 'intraday'
+    const analytics = makeAnalytics() // defaults have bestStyle: 'Intraday' (capitalized, as analytics produces)
     const results = generateInsights(analytics)
     const rule = results.find(i => i.id === 'best-style')
     expect(rule).toBeDefined()
     expect(rule!.severity).toBe('info')
     expect(rule!.priority).toBe(40)
-    expect(rule!.title).toContain('intraday')
+    expect(rule!.title).toContain('Intraday')
+    expect(rule!.description).toContain('Intraday')
   })
 
   it('fires win rate misleading rule when high win rate and negative expectancy', () => {

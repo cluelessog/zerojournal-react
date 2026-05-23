@@ -47,13 +47,9 @@ export function OpenPositions({ symbolPnL }: OpenPositionsProps) {
         </thead>
         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
           {openPositions.map((pos) => {
-            // Open value = buyValue that hasn't been sold yet (proportional)
-            // We approximate: openValue = openQuantity * avgBuyPrice
-            // avg buy price = buyValue / quantity
-            const avgBuyPrice = pos.quantity > 0 ? pos.buyValue / pos.quantity : 0
-            const openValue = pos.openQuantity * avgBuyPrice
             const currentValue = pos.openQuantity * pos.previousClosingPrice
-            const unrealizedPnL = currentValue - openValue
+            const unrealizedPnL = pos.unrealizedPnL
+            const openValue = currentValue - unrealizedPnL
             const unrealizedPct = pct(unrealizedPnL, openValue)
             const isGain = unrealizedPnL >= 0
 
@@ -87,17 +83,11 @@ export function OpenPositions({ symbolPnL }: OpenPositionsProps) {
               Total ({openPositions.length} position{openPositions.length !== 1 ? 's' : ''})
             </td>
             <td className={cn('px-3 py-2 text-right font-bold whitespace-nowrap', (() => {
-                const total = openPositions.reduce((s, p) => {
-                  const avg = p.quantity > 0 ? p.buyValue / p.quantity : 0
-                  return s + (p.openQuantity * p.previousClosingPrice - p.openQuantity * avg)
-                }, 0)
+                const total = openPositions.reduce((s, p) => s + p.unrealizedPnL, 0)
                 return total >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
               })())}>
               {(() => {
-                const total = openPositions.reduce((s, p) => {
-                  const avg = p.quantity > 0 ? p.buyValue / p.quantity : 0
-                  return s + (p.openQuantity * p.previousClosingPrice - p.openQuantity * avg)
-                }, 0)
+                const total = openPositions.reduce((s, p) => s + p.unrealizedPnL, 0)
                 return `${total >= 0 ? '+' : ''}${fmt(total)}`
               })()}
             </td>

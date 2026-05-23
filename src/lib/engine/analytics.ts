@@ -756,9 +756,7 @@ function buildStyleMetrics(matches: FIFOMatch[]): TradingStyleMetrics {
 
 /**
  * Classify FIFO matches into trading styles based on holding days.
- * Categories: Intraday (0 days), BTST (1 day, subcategory of Swing), Velocity (2-4 days, subcategory of Swing), Swing (>0 days)
- *
- * Swing encompasses all overnight positions (BTST and Velocity are informational subcategories).
+ * Categories are mutually exclusive: Intraday (0), BTST (1), Velocity (2-4), Swing (>=5).
  * Best/worst style determined by avgPnL, requiring MIN_TRADES_FOR_RECOMMENDATION (3)
  * trades per category. Need at least 2 qualifying styles to pick best/worst.
  *
@@ -768,7 +766,7 @@ export function classifyTradingStyles(matches: FIFOMatch[]): TradingStyleResult 
   const intraday = matches.filter((m) => m.holdingDays === 0)
   const btst = matches.filter((m) => m.holdingDays === 1)
   const velocity = matches.filter((m) => m.holdingDays >= 2 && m.holdingDays <= 4)
-  const swing = matches.filter((m) => m.holdingDays > 0)
+  const swing = matches.filter((m) => m.holdingDays >= 5)
 
   const result: TradingStyleResult = {
     intraday: buildStyleMetrics(intraday),

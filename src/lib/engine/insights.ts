@@ -110,7 +110,7 @@ export function generateInsights(analytics: TradeAnalytics): Insight[] {
   // Rule 7: Best trading style recommendation (info, priority 40)
   if (analytics.tradingStyles.bestStyle !== null) {
     const styleName = analytics.tradingStyles.bestStyle
-    const styleKey = styleName as keyof typeof analytics.tradingStyles
+    const styleKey = styleName.toLowerCase() as keyof typeof analytics.tradingStyles
     const styleMetrics = analytics.tradingStyles[styleKey]
     if (styleMetrics && typeof styleMetrics === 'object' && 'avgPnL' in styleMetrics) {
       const { avgPnL, winRate } = styleMetrics as { avgPnL: number; winRate: number }

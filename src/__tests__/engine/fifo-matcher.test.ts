@@ -110,10 +110,10 @@ describe('matchTradesWithPnL — FIFO matching', () => {
 
   it('multiple symbols are matched independently', () => {
     const trades = [
-      makeTrade({ symbol: 'AAAA', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
-      makeTrade({ symbol: 'BBBB', tradeDate: '2025-01-02', tradeType: 'buy', price: 200, quantity: 5 }),
-      makeTrade({ symbol: 'AAAA', tradeDate: '2025-01-05', tradeType: 'sell', price: 110, quantity: 10 }),
-      makeTrade({ symbol: 'BBBB', tradeDate: '2025-01-05', tradeType: 'sell', price: 190, quantity: 5 }),
+      makeTrade({ symbol: 'AAAA', isin: 'INE000A01001', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'BBBB', isin: 'INE000A01002', tradeDate: '2025-01-02', tradeType: 'buy', price: 200, quantity: 5 }),
+      makeTrade({ symbol: 'AAAA', isin: 'INE000A01001', tradeDate: '2025-01-05', tradeType: 'sell', price: 110, quantity: 10 }),
+      makeTrade({ symbol: 'BBBB', isin: 'INE000A01002', tradeDate: '2025-01-05', tradeType: 'sell', price: 190, quantity: 5 }),
     ]
     const matches = matchTradesWithPnL(trades)
     expect(matches).toHaveLength(2)
@@ -194,6 +194,19 @@ describe('calculateExpectancy', () => {
     expect(result.overall.expectancy).toBeCloseTo(200)
     expect(result.overall.winRate).toBe(1)
   })
+
+  it('matches trades with same ISIN but different symbol names (corporate action rename)', () => {
+    const trades = [
+      makeTrade({ symbol: 'TVSELECT', isin: 'INE123A01001', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'TVSELECT-T', isin: 'INE123A01001', tradeDate: '2025-02-01', tradeType: 'sell', price: 150, quantity: 10 }),
+    ]
+    const matches = matchTradesWithPnL(trades)
+    expect(matches).toHaveLength(1)
+    expect(matches[0].symbol).toBe('TVSELECT-T')
+    expect(matches[0].pnl).toBe(500)
+    expect(matches[0].quantity).toBe(10)
+    expect(matches[0].holdingDays).toBeGreaterThan(0)
+  })
 })
 
 // ─── Risk-Reward Tests ────────────────────────────────────────────────────────
@@ -213,10 +226,10 @@ describe('calculateRiskReward', () => {
   it('calculates correct R:R ratio', () => {
     // avgWin = 300, avgLoss = -100 → ratio = 3.0
     const trades = [
-      makeTrade({ symbol: 'W1', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
-      makeTrade({ symbol: 'W1', tradeDate: '2025-01-05', tradeType: 'sell', price: 130, quantity: 10 }), // +300
-      makeTrade({ symbol: 'L1', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
-      makeTrade({ symbol: 'L1', tradeDate: '2025-01-05', tradeType: 'sell', price: 90, quantity: 10 }),  // -100
+      makeTrade({ symbol: 'W1', isin: 'INE000A01003', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'W1', isin: 'INE000A01003', tradeDate: '2025-01-05', tradeType: 'sell', price: 130, quantity: 10 }), // +300
+      makeTrade({ symbol: 'L1', isin: 'INE000A01004', tradeDate: '2025-01-02', tradeType: 'buy', price: 100, quantity: 10 }),
+      makeTrade({ symbol: 'L1', isin: 'INE000A01004', tradeDate: '2025-01-05', tradeType: 'sell', price: 90, quantity: 10 }),  // -100
     ]
     const matches = matchTradesWithPnL(trades)
     const result = calculateRiskReward(matches)

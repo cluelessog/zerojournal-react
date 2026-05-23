@@ -1,4 +1,5 @@
 import type { RawTrade, FIFOMatch } from '@/lib/types'
+import { dateDiffDays } from '@/lib/engine/date-utils'
 
 interface BuyEntry {
   date: string
@@ -22,22 +23,22 @@ interface BuyEntry {
 export function matchTradesWithPnL(trades: RawTrade[]): FIFOMatch[] {
   const matches: FIFOMatch[] = []
 
-  // Group trades by symbol
-  const bySymbol = new Map<string, RawTrade[]>()
+  // Group trades by ISIN — stable across corporate action symbol renames (e.g. TVSELECT → TVSELECT-T)
+  const byIsin = new Map<string, RawTrade[]>()
   for (const t of trades) {
-    const group = bySymbol.get(t.symbol)
+    const group = byIsin.get(t.isin)
     if (group) {
       group.push(t)
     } else {
-      bySymbol.set(t.symbol, [t])
+      byIsin.set(t.isin, [t])
     }
   }
 
-  for (const [symbol, symbolTrades] of bySymbol) {
+  for (const [, isinTrades] of byIsin) {
     // Sort by tradeDate, orderExecutionTime, tradeId for deterministic FIFO order
     // Sort by tradeDate, orderExecutionTime, then buys-before-sells (so buys
     // are queued before same-timestamp sells consume them), then tradeId.
-    const sorted = [...symbolTrades].sort((a, b) => {
+    const sorted = [...isinTrades].sort((a, b) => {
       if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? -1 : 1
       if (a.orderExecutionTime !== b.orderExecutionTime) {
         return a.orderExecutionTime < b.orderExecutionTime ? -1 : 1
@@ -78,7 +79,7 @@ export function matchTradesWithPnL(trades: RawTrade[]): FIFOMatch[] {
           const pnl = (sellPrice - buy.price) * matchQty
 
           matches.push({
-            symbol,
+            symbol: trade.symbol,
             buyDate: buy.date,
             sellDate,
             quantity: matchQty,
@@ -120,11 +121,4 @@ export function sortMatchesChronologically(matches: FIFOMatch[]): FIFOMatch[] {
   })
 }
 
-/**
- * Calculate the number of calendar days between two ISO date strings.
- */
-function dateDiffDays(from: string, to: string): number {
-  const d1 = new Date(from)
-  const d2 = new Date(to)
-  return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24))
-}
+
