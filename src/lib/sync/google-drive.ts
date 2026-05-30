@@ -217,18 +217,19 @@ export async function uploadFile(
     ? { name }
     : { name, parents: [parentId] }
 
-  const boundary = '-------zerojournal_boundary'
-  const delimiter = `\r\n--${boundary}\r\n`
-  const closeDelimiter = `\r\n--${boundary}--`
+  const boundary = 'zerojournal_boundary'
 
-  const body =
-    delimiter +
-    'Content-Type: application/json\r\n\r\n' +
-    JSON.stringify(metadata) +
-    delimiter +
-    'Content-Type: application/json\r\n\r\n' +
-    content +
-    closeDelimiter
+  const body = [
+    `--${boundary}`,
+    'Content-Type: application/json; charset=UTF-8',
+    '',
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    'Content-Type: application/json',
+    '',
+    content,
+    `--${boundary}--`,
+  ].join('\r\n')
 
   const url = fileId
     ? `${DRIVE_UPLOAD_API}/files/${fileId}?uploadType=multipart`
