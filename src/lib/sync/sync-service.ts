@@ -139,6 +139,7 @@ export async function connectDrive(clientId?: string): Promise<void> {
     await getAccessToken(true)
     setStatus('idle')
     await pullAndMerge()
+    schedulePush()
   } catch (err) {
     console.error('[SyncService] connectDrive failed', err)
     setStatus('error')
