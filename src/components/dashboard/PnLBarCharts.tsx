@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { buildTimeline } from '@/lib/engine/timeline'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 import type { RawTrade, SymbolPnL, TimelinePoint } from '@/lib/types'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 import { format, getISOWeek } from 'date-fns'
 
 interface PnLBarChartsProps {
@@ -28,7 +29,7 @@ type CostMode = 'net' | 'gross'
 const CHART_HEIGHT = 350
 
 function formatBarDate(isoDate: string, aggregation: Aggregation): string {
-  const d = new Date(isoDate)
+  const d = parseLocalDate(isoDate)
   switch (aggregation) {
     case 'daily':
       return format(d, 'd MMM')

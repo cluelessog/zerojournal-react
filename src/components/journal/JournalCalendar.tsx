@@ -27,7 +27,7 @@ const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function JournalCalendar({
   trades,
-  orderGroups,
+  orderGroups: _orderGroups,
   timeline,
   journalEntries,
   onDayClick,

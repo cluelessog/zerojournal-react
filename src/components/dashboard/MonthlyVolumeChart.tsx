@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { RawTrade } from '@/lib/types'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 
 interface MonthlyVolumeChartProps {
   trades: RawTrade[]
@@ -25,7 +26,7 @@ export function MonthlyVolumeChart({ trades }: MonthlyVolumeChartProps) {
     const monthMap = new Map<string, number>()
 
     for (const t of trades) {
-      const date = new Date(t.tradeDate)
+      const date = parseLocalDate(t.tradeDate)
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       monthMap.set(key, (monthMap.get(key) ?? 0) + 1)
     }

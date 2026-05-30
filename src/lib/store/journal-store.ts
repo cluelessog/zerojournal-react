@@ -8,6 +8,47 @@ import {
   deleteJournalEntry,
 } from '@/lib/persistence/db'
 
+export function exportJournalEntries(entries: JournalEntry[]): void {
+  const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `zerojournal-entries-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function importJournalEntries(
+  file: File,
+  existingEntries: JournalEntry[]
+): Promise<{ imported: number; skipped: number }> {
+  const text = await file.text()
+  const parsed: unknown = JSON.parse(text)
+  if (!Array.isArray(parsed)) throw new Error('Invalid file: expected a JSON array')
+
+  const existingById = new Map(existingEntries.map((e) => [e.id, e]))
+  let imported = 0
+  let skipped = 0
+
+  for (const raw of parsed) {
+    if (!raw || typeof raw !== 'object' || !('id' in raw) || !('tradeDate' in raw)) {
+      skipped++
+      continue
+    }
+    const incoming = raw as JournalEntry
+    const existing = existingById.get(incoming.id)
+    // Keep whichever version was updated more recently
+    if (existing && existing.updatedAt >= incoming.updatedAt) {
+      skipped++
+      continue
+    }
+    await updateJournalEntry({ ...incoming, notes: incoming.notes ?? incoming.content ?? '' })
+    imported++
+  }
+
+  return { imported, skipped }
+}
+
 /** Normalize legacy v4 entries that have `content` instead of `notes` */
 function normalizeEntry(entry: JournalEntry): JournalEntry {
   return {

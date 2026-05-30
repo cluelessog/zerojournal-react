@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { RawTrade, SymbolPnL } from '@/lib/types'
 import { buildTimeline } from '@/lib/engine/timeline'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
 
 type Aggregation = 'daily' | 'weekly' | 'monthly'
@@ -36,7 +37,7 @@ function formatCurrencyShort(value: number): string {
 }
 
 function formatDate(dateStr: string): string {
-  const d = new Date(dateStr)
+  const d = parseLocalDate(dateStr)
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
@@ -70,7 +71,7 @@ function CustomTooltip({
       dailyCharges: number
     }
   }
-  const dateStr = new Date(label).toLocaleDateString('en-IN', {
+  const dateStr = parseLocalDate(label).toLocaleDateString('en-IN', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -113,6 +114,9 @@ function CustomTooltip({
         <p className="text-xs text-muted-foreground/60 mt-1">
           Gross: Rs. {fmtINR(d.dailyPnL)} | Net: Rs. {fmtINR(d.dailyNetPnL)}
         </p>
+      )}
+      {costMode === 'net' && (
+        <p className="text-xs text-muted-foreground/40 mt-0.5">Net excl. DP charges</p>
       )}
     </div>
   )

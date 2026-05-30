@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
-import { useJournalStore } from '@/lib/store/journal-store'
+import { useJournalStore, exportJournalEntries, importJournalEntries } from '@/lib/store/journal-store'
 import { buildTimeline } from '@/lib/engine/timeline'
 import { JournalCalendar } from '@/components/journal/JournalCalendar'
 import { DayDetailSheet } from '@/components/journal/DayDetailSheet'
@@ -36,6 +36,26 @@ export default function JournalPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [editor, setEditor] = useState<EditorState>({ mode: 'closed' })
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const handleExport = useCallback(() => {
+    exportJournalEntries(entries)
+  }, [entries])
+
+  const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const { imported, skipped } = await importJournalEntries(file, entries)
+      await loadEntries()
+      setImportMsg(`Imported ${imported} entries${skipped > 0 ? `, ${skipped} skipped (already up to date)` : ''}.`)
+    } catch {
+      setImportMsg('Import failed — make sure the file is a valid zerojournal export.')
+    }
+    setTimeout(() => setImportMsg(null), 5000)
+  }, [entries, loadEntries])
 
   useEffect(() => {
     loadEntries()
@@ -85,14 +105,45 @@ export default function JournalPage() {
   return (
     <div className="p-4 sm:p-6 flex flex-col gap-5 max-w-4xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
-          Trade Journal
-        </h1>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Click any day to view trades and add journal entries
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+            Trade Journal
+          </h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Click any day to view trades and add journal entries
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <button
+            onClick={() => importInputRef.current?.click()}
+            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            Import
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={entries.length === 0}
+            className="text-xs px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Export
+          </button>
+        </div>
       </div>
+
+      {/* Import result message */}
+      {importMsg && (
+        <p className="text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-3 py-2 rounded-md">
+          {importMsg}
+        </p>
+      )}
 
       {/* Error */}
       {error && (

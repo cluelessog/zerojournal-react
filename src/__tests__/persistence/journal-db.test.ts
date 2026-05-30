@@ -156,7 +156,7 @@ describe('journal IndexedDB', () => {
     await db.savePortfolio(testSnapshot as any)
     const loaded = await db.loadPortfolio()
     expect(loaded).toBeDefined()
-    expect(loaded?.rawTrades).toEqual([])
+    expect(loaded?.trades).toEqual([])
 
     const testMeta = { importedAt: new Date().toISOString(), tradebookRowCount: 42 }
     await db.saveMetadata(testMeta as any)

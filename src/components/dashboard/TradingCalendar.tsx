@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { RawTrade } from '@/lib/types'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 import { cn } from '@/lib/utils'
 
 interface TradingCalendarProps {
@@ -35,8 +36,8 @@ export function TradingCalendar({ trades }: TradingCalendarProps) {
     const dates = [...dateMap.keys()].sort()
     if (dates.length === 0) return { weeks: [], maxCount: 0, tradingDayCount: 0 }
 
-    const startDate = new Date(dates[0])
-    const endDate = new Date(dates[dates.length - 1])
+    const startDate = parseLocalDate(dates[0])
+    const endDate = parseLocalDate(dates[dates.length - 1])
 
     // Adjust start to Monday
     const dayOfWeek = startDate.getDay()

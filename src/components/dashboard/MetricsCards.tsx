@@ -101,6 +101,7 @@ export function MetricsCards({ analytics, pnlSummary, monthlyBreakdown }: Metric
           label="Total Charges"
           value={formatCurrency(totalChargesInclDP)}
           colorClass="text-red-600 dark:text-red-400"
+          tooltip={`Trading: ${formatCurrency(tradingCharges)} + DP: ${formatCurrency(pnlSummary.charges.dpCharges)}. P&L Timeline deducts trading charges only (excl. DP).`}
         />
         <MetricCard
           label="Trade Count"

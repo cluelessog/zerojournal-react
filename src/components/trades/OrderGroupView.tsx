@@ -9,6 +9,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 
 interface OrderGroupViewProps {
   trades: RawTrade[]
@@ -27,7 +28,7 @@ function formatINR(value: number): string {
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
+  const d = parseLocalDate(dateStr)
   if (isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }

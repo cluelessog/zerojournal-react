@@ -1,4 +1,5 @@
 import type { RawTrade, OrderGroup } from '@/lib/types'
+import { dateDiffDays } from '@/lib/engine/date-utils'
 
 /**
  * Group trades by orderId into OrderGroups.
@@ -64,8 +65,7 @@ export function groupOrders(trades: RawTrade[]): OrderGroup[] {
     // Holding days
     let holdingDays = 0
     if (closeDate && openDate) {
-      const diff = new Date(closeDate).getTime() - new Date(openDate).getTime()
-      holdingDays = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
+      holdingDays = Math.max(0, dateDiffDays(openDate, closeDate))
     }
 
     groups.push({

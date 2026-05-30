@@ -1,5 +1,6 @@
 import type { RawTrade, SymbolPnL, TimelinePoint } from '@/lib/types'
 import { startOfWeek, startOfMonth, format } from 'date-fns'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 import { buildTradeAttributions } from '@/lib/engine/analytics'
 import { matchTradesWithPnL } from '@/lib/engine/fifo-matcher'
 
@@ -156,7 +157,7 @@ export function buildTimeline(
 }
 
 function toAggregationKey(isoDate: string, aggregation: Aggregation): string {
-  const date = new Date(isoDate)
+  const date = parseLocalDate(isoDate)
   switch (aggregation) {
     case 'daily':
       return isoDate

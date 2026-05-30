@@ -4,15 +4,6 @@ import { Button } from '@/components/ui/button'
 
 const STORAGE_KEY = 'zerojournal-theme'
 
-function getInitialTheme(): 'dark' | 'light' {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored === 'dark' || stored === 'light') return stored
-  } catch {
-    // localStorage unavailable
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
 
 function applyTheme(theme: 'dark' | 'light') {
   const root = document.documentElement

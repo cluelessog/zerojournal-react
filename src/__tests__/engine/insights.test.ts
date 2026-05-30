@@ -103,6 +103,11 @@ function makeAnalytics(overrides: Partial<TradeAnalytics> = {}): TradeAnalytics 
       bestStyle: 'Intraday',
       worstStyle: 'Velocity',
     },
+    styleStreaks: {
+      overall: { longestWinStreak: 5, longestLossStreak: 3, currentStreak: { type: 'win', count: 2 } },
+      intraday: { longestWinStreak: 4, longestLossStreak: 2, currentStreak: { type: 'win', count: 1 } },
+      swing: { longestWinStreak: 2, longestLossStreak: 2, currentStreak: { type: null, count: 0 } },
+    },
   }
 
   return { ...defaults, ...overrides }

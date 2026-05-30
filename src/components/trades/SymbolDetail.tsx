@@ -8,6 +8,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { parseLocalDate } from '@/lib/engine/date-utils'
 
 interface SymbolDetailProps {
   symbol: string
@@ -29,14 +30,14 @@ function formatINR(value: number): string {
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
+  const d = parseLocalDate(dateStr)
   if (isNaN(d.getTime())) return dateStr
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 export function SymbolDetail({ symbol, isin, trades, symbolPnL }: SymbolDetailProps) {
   const sorted = [...trades].sort(
-    (a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime()
+    (a, b) => parseLocalDate(a.tradeDate).getTime() - parseLocalDate(b.tradeDate).getTime()
   )
 
   const buyTrades = trades.filter((t) => t.tradeType === 'buy')
