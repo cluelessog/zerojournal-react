@@ -7,6 +7,7 @@ import {
   updateJournalEntry,
   deleteJournalEntry,
 } from '@/lib/persistence/db'
+import { schedulePush } from '@/lib/sync/sync-service'
 
 export function exportJournalEntries(entries: JournalEntry[]): void {
   const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' })
@@ -130,6 +131,7 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
       await addJournalEntry(entry)
       // Reload to keep sort order consistent
       await get().loadEntries()
+      schedulePush()
     } catch (err) {
       console.error('[JournalStore] addEntry failed', err)
       set({ error: 'Failed to save journal entry' })
@@ -148,6 +150,7 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
     try {
       await updateJournalEntry(updated)
       await get().loadEntries()
+      schedulePush()
     } catch (err) {
       console.error('[JournalStore] updateEntry failed', err)
       set({ error: 'Failed to update journal entry' })
@@ -159,6 +162,7 @@ export const useJournalStore = create<JournalStore>((set, get) => ({
     try {
       await deleteJournalEntry(id)
       set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
+      schedulePush()
     } catch (err) {
       console.error('[JournalStore] deleteEntry failed', err)
       set({ error: 'Failed to delete journal entry' })

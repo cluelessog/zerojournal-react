@@ -6,7 +6,9 @@ import TradesPage from '@/pages/TradesPage'
 import AnalysisPage from '@/pages/AnalysisPage'
 import ImportPage from '@/pages/ImportPage'
 import { usePortfolioStore } from '@/lib/store/portfolio-store'
+import { useJournalStore } from '@/lib/store/journal-store'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
+import { initSync, registerStoreReloader } from '@/lib/sync/sync-service'
 
 const JournalPage = lazy(() => import('@/pages/JournalPage'))
 
@@ -18,6 +20,15 @@ export default function App() {
   useEffect(() => {
     loadFromDB()
   }, [loadFromDB])
+
+  // Register store reloader and initialize Drive sync on mount
+  useEffect(() => {
+    registerStoreReloader(() => {
+      usePortfolioStore.getState().loadFromDB()
+      useJournalStore.getState().loadEntries()
+    })
+    initSync()
+  }, [])
 
   return (
     <ErrorBoundary>

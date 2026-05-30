@@ -17,6 +17,7 @@ import { computeAnalytics } from '@/lib/engine/analytics'
 import { buildTimeline } from '@/lib/engine/timeline'
 import { savePortfolio, loadPortfolio, deleteAll } from '@/lib/persistence/db'
 import { getSettings, setSettings } from '@/lib/persistence/storage'
+import { schedulePush } from '@/lib/sync/sync-service'
 
 interface PortfolioStore {
   // State
@@ -116,6 +117,7 @@ export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
     })
 
     await savePortfolio(snapshot)
+    schedulePush()
   },
 
   loadFromDB: async () => {

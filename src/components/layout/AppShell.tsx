@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Menu, X } from 'lucide-react'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { DriveStatusChip } from '@/components/sync/DriveStatusChip'
 
 interface NavItem {
   path: string
@@ -197,6 +198,7 @@ export default function AppShell({ children }: AppShellProps) {
               />
               {isLoaded ? 'Data loaded' : 'No data'}
             </span>
+            <DriveStatusChip />
             <ThemeToggle />
           </div>
         </header>
