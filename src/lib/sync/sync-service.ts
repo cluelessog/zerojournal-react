@@ -25,7 +25,7 @@ export type SyncStatus = 'disconnected' | 'connecting' | 'idle' | 'pushing' | 'p
 
 interface DrivePortfolioFile {
   snapshot: PortfolioSnapshot
-  metadata: ImportMetadata
+  metadata?: ImportMetadata
 }
 
 // ─── Module State ──────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ export async function pullAndMerge(): Promise<void> {
         const remoteImportedAt = driveFile.snapshot?.importedAt ?? ''
         if (remoteImportedAt > localImportedAt) {
           await savePortfolio(driveFile.snapshot)
-          await saveMetadata(driveFile.metadata)
+          if (driveFile.metadata) await saveMetadata(driveFile.metadata)
         }
       } catch (err) {
         console.error('[SyncService] pullAndMerge portfolio failed', err)
@@ -230,11 +230,11 @@ async function push(): Promise<void> {
       token,
     )
 
-    // Upload portfolio (only if data exists)
+    // Upload portfolio (only if snapshot exists; metadata is optional)
     const portfolio = await loadPortfolio()
     const metadata = await getMetadata()
-    if (portfolio && metadata) {
-      const driveFile: DrivePortfolioFile = { snapshot: portfolio, metadata }
+    if (portfolio) {
+      const driveFile: DrivePortfolioFile = { snapshot: portfolio, ...(metadata && { metadata }) }
       const portfolioContent = JSON.stringify(driveFile)
       _portfolioFileId = await uploadFile(
         PORTFOLIO_FILE,
