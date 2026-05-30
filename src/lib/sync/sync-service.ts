@@ -111,21 +111,12 @@ function resolveClientId(override?: string): Promise<string | undefined> {
 export async function initSync(): Promise<void> {
   try {
     const clientId = await resolveClientId()
-    if (!clientId) {
-      setStatus('disconnected')
-      return
-    }
-    setStatus('connecting')
+    if (!clientId) return
+    // Only pre-load the GIS script so sign-in is instant when user clicks.
+    // Do NOT auto-connect — user must explicitly click "Sign in with Google".
     await initDriveClient(clientId)
-    const token = await getAccessToken(false)
-    if (!token) {
-      setStatus('disconnected')
-      return
-    }
-    setStatus('idle')
-    await pullAndMerge()
   } catch {
-    setStatus('disconnected')
+    // ignore — Drive simply stays disconnected
   }
 }
 
