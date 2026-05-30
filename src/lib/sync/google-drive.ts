@@ -45,12 +45,11 @@ interface StoredToken {
 
 function getStoredToken(): string | null {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY)
+    const raw = localStorage.getItem(SESSION_KEY)
     if (!raw) return null
     const parsed: StoredToken = JSON.parse(raw)
-    // Consider expired if within 60 seconds of expiry
     if (Date.now() >= parsed.expiresAt - 60_000) {
-      sessionStorage.removeItem(SESSION_KEY)
+      localStorage.removeItem(SESSION_KEY)
       return null
     }
     return parsed.accessToken
@@ -65,11 +64,11 @@ function storeToken(accessToken: string, expiresIn: string | number): void {
     accessToken,
     expiresAt: Date.now() + seconds * 1000,
   }
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(stored))
+  localStorage.setItem(SESSION_KEY, JSON.stringify(stored))
 }
 
 export function clearToken(): void {
-  sessionStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(SESSION_KEY)
   tokenClient = null
 }
 
@@ -135,17 +134,16 @@ export function getAccessToken(interactive = false): Promise<string> {
     }
     tokenClient.callback = (response: GISTokenResponse) => {
       if (response.error) {
+        // Non-interactive silent auth failed — resolve empty so caller can handle gracefully
+        if (!interactive) { resolve(''); return }
         reject(new Error(`OAuth error: ${response.error}`))
         return
       }
       storeToken(response.access_token, response.expires_in)
       resolve(response.access_token)
     }
-    if (interactive) {
-      tokenClient.requestAccessToken({ prompt: 'consent' })
-    } else {
-      tokenClient.requestAccessToken({ prompt: '' })
-    }
+    // 'none' = fail silently without any UI; '' = show UI only if necessary
+    tokenClient.requestAccessToken({ prompt: interactive ? '' : 'none' })
   })
 }
 
