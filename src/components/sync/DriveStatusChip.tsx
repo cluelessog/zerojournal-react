@@ -46,24 +46,26 @@ function SpinnerIcon() {
   )
 }
 
+const ENV_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+
 type DialogMode = 'setup' | 'connected' | null
 
 export function DriveStatusChip() {
   const [status, setStatus] = useState<SyncStatus>(getSyncStatus)
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [clientIdInput, setClientIdInput] = useState('')
-  const [hasStoredClientId, setHasStoredClientId] = useState(false)
+  const [hasStoredClientId, setHasStoredClientId] = useState(!!ENV_CLIENT_ID)
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState<string | null>(null)
 
-  // Subscribe to status changes
   useEffect(() => {
     const unsubscribe = onStatusChange(setStatus)
     return unsubscribe
   }, [])
 
-  // Check whether a client ID is stored
+  // Only check IndexedDB if no env var is present
   useEffect(() => {
+    if (ENV_CLIENT_ID) return
     getSettings<string>('googleClientId').then((id) => {
       setHasStoredClientId(!!id)
     })
@@ -72,13 +74,11 @@ export function DriveStatusChip() {
   async function handleChipClick() {
     if (status === 'disconnected') {
       if (hasStoredClientId) {
-        // Attempt silent reconnect, no dialog needed
         try {
           setConnecting(true)
           await connectDrive()
         } catch {
-          // Fall back to setup dialog on error
-          setDialogMode('setup')
+          setDialogMode(ENV_CLIENT_ID ? 'connected' : 'setup')
         } finally {
           setConnecting(false)
         }
@@ -88,7 +88,6 @@ export function DriveStatusChip() {
     } else if (status === 'idle' || status === 'error') {
       setDialogMode('connected')
     }
-    // Ignore clicks while connecting/pushing/pulling
   }
 
   async function handleConnect() {

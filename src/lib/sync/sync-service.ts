@@ -101,9 +101,16 @@ function mergeJournal(local: JournalEntry[], remote: JournalEntry[]): JournalEnt
 
 // ─── Public API ────────────────────────────────────────────────────────────────
 
+function resolveClientId(override?: string): Promise<string | undefined> {
+  if (override) return Promise.resolve(override)
+  const envId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+  if (envId) return Promise.resolve(envId)
+  return getSettings<string>('googleClientId')
+}
+
 export async function initSync(): Promise<void> {
   try {
-    const clientId = await getSettings<string>('googleClientId')
+    const clientId = await resolveClientId()
     if (!clientId) {
       setStatus('disconnected')
       return
@@ -125,10 +132,10 @@ export async function initSync(): Promise<void> {
 export async function connectDrive(clientId?: string): Promise<void> {
   try {
     setStatus('connecting')
-    if (clientId) {
-      await setSettings('googleClientId', clientId)
-      await initDriveClient(clientId)
-    }
+    const id = await resolveClientId(clientId)
+    if (!id) throw new Error('No Google Client ID configured')
+    if (clientId) await setSettings('googleClientId', clientId)
+    await initDriveClient(id)
     await getAccessToken(true)
     setStatus('idle')
     await pullAndMerge()
